@@ -1,19 +1,24 @@
 #![no_std]
 #![no_main]
 
+
 extern crate alloc;
-use alloc::boxed::Box;
+use alloc::{boxed::Box, format};
+
+mod gauge;
+mod can;
+
 
 use bevy_ecs::prelude::*;
-use core::fmt::Write;
+use embedded_can::blocking::Can;
 use embedded_graphics::{
-    mono_font::{ascii::FONT_8X13, MonoTextStyle}, pixelcolor::Rgb565, prelude::*, primitives::{Circle, PrimitiveStyle, Rectangle}, text::Text, Drawable
+    mono_font::{ascii::FONT_8X13, iso_8859_14::FONT_10X20, MonoTextStyle}, pixelcolor::Rgb565, prelude::*, primitives::{Circle, PrimitiveStyle, Rectangle}, text::Text, Drawable
 };
 use embedded_graphics_framebuf::FrameBuf;
 use embedded_graphics_framebuf::backends::FrameBufferBackend;
 use embedded_hal::delay::DelayNs;
 use embedded_hal_bus::spi::ExclusiveDevice;
-use esp_hal::delay::Delay;
+use esp_hal::{delay::Delay, twai::{BaudRate, TwaiConfiguration, TwaiMode}};
 use esp_hal::dma::{DmaRxBuf, DmaTxBuf};
 use esp_hal::dma_buffers;
 use esp_hal::{
@@ -26,9 +31,11 @@ use esp_hal::{
 };
 use esp_println::{logger::init_logger_from_env, println};
 use log::info;
-use mipidsi::options::{ColorOrder, Orientation};
+use mipidsi::options::{ColorOrder, Orientation, Rotation};
 use mipidsi::{Builder, models::GC9A01};
 use mipidsi::{interface::SpiInterface, options::ColorInversion};
+
+use crate::can::CanResource;
 
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {
@@ -116,14 +123,19 @@ fn draw_grid<D: DrawTarget<Color = Rgb565>>(
 ) -> Result<(), D::Error> {
     let border_color = Rgb565::new(230, 230, 230);
 
-    Circle::with_center(Point::new(120, 120), 80)
-        .into_styled(PrimitiveStyle::with_fill(Rgb565::YELLOW))
+    Circle::with_center(Point::new(120, 120), 140)
+        .into_styled(PrimitiveStyle::with_fill(Rgb565::BLUE))
         .draw(display)?;
     Rectangle::new(Point::new(10, 10), Size::new(7, 7))
         .into_styled(PrimitiveStyle::with_fill(border_color))
         .draw(display)?;
 
-    info!("paintin: {}", game.count);
+    Text::new(
+        format!("msgs rcv: {}", game.messages_received).as_str(),
+        Point::new(65, 120),
+        MonoTextStyle::new(&FONT_10X20, Rgb565::WHITE),
+    ).draw(display)?;
+
     Ok(())
 }
 
@@ -149,13 +161,13 @@ fn draw_grid<D: DrawTarget<Color = Rgb565>>(
 
 #[derive(Resource)]
 struct AppStateResource {
-    count: u32,
+    messages_received: u32,
 }
 
 impl Default for AppStateResource {
     fn default() -> Self {
         Self {
-            count: 0,
+            messages_received: 0,
         }
     }
 }
@@ -169,12 +181,17 @@ struct DisplayResource {
     display: MyDisplay,
 }
 
-fn update_game_state(
+fn update_can_message(
     mut app_state: ResMut<AppStateResource>,
-    mut rng_res: ResMut<RngResource>,
+    mut can_res: ResMut<CanResource>,
 ) {
-    app_state.count+=1;
+    info!("Reading message!");
+    if let Some(msg) = can_res.read_message() {
+        info!("Message found");
+        app_state.messages_received+=1;
+    }
 }
+
 
 /// Render the game state by drawing into the offscreen framebuffer and then flushing
 /// it to the display via DMA. After drawing the game grid and generation number,
@@ -243,7 +260,7 @@ fn main() -> ! {
     let mut display: MyDisplay = Builder::new(GC9A01, di)
         .reset_pin(reset)
         .display_size(240, 240)
-        .orientation(Orientation::new().flip_horizontal())
+        .orientation(Orientation::new().rotate(Rotation::Deg90))
         .color_order(ColorOrder::Bgr)
         .invert_colors(ColorInversion::Inverted)
         .init(&mut display_delay)
@@ -257,10 +274,25 @@ fn main() -> ! {
 
     info!("Display initialized");
 
+
+    let can_rx = peripherals.GPIO33;
+    let can_tx = peripherals.GPIO21;
+
+    let can = TwaiConfiguration::new(
+        peripherals.TWAI0,
+        can_rx,
+        can_tx,
+        BaudRate::B125K,
+        TwaiMode::Normal,
+    ).start();
+
+
+
     // --- Initialize Game Resources ---
     let mut game = AppStateResource::default();
     let mut rng_instance = Rng::new(peripherals.RNG);
 
+    let can_instance = CanResource::new(can);
     // Create the framebuffer resource.
     let fb_res = FrameBufferResource::new();
 
@@ -271,11 +303,13 @@ fn main() -> ! {
     world.insert_non_send_resource(DisplayResource { display });
     // Insert the framebuffer resource as a normal resource.
     world.insert_resource(fb_res);
+    world.insert_resource(can_instance);
 
 
     let mut schedule = Schedule::default();
     // schedule.add_systems(button_reset_system);
-    schedule.add_systems(update_game_state);
+    // schedule.add_systems(update_game_state);
+    schedule.add_systems(update_can_message);
     schedule.add_systems(render_system);
 
     let mut loop_delay = Delay::new();

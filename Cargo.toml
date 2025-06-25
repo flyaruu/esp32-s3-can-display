@@ -1,7 +1,6 @@
 [package]
-name = "waveshare-esp32-s3-example"
-version = "0.6.0"
-authors = ["Juraj Michálek <juraj.michalek@espressif.com>"]
+name = "esp32-s3-can-display"
+version = "0.1.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 
@@ -23,6 +22,9 @@ embedded-graphics-framebuf = "0.5.0"
 heapless = "0.8.0"
 embedded-hal-bus = "0.3.0"
 bevy_ecs = { version = "0.16.1", default-features = false }
+num-traits = { version = "0.2.19", default-features = false }
+embedded-can = "0.4.1"
+# num-traits = "0.2.19"
 
 [features]
 default = [ "esp-hal/esp32s3", "esp-backtrace/esp32s3", "esp-println/esp32s3", "esp-hal/psram" ]
