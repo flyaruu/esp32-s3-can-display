@@ -282,7 +282,7 @@ fn main() -> ! {
         peripherals.TWAI0,
         can_rx,
         can_tx,
-        BaudRate::B125K,
+        BaudRate::B500K,
         TwaiMode::Normal,
     ).start();
 
