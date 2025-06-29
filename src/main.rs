@@ -275,8 +275,8 @@ fn main() -> ! {
     info!("Display initialized");
 
 
-    let can_rx = peripherals.GPIO33;
-    let can_tx = peripherals.GPIO21;
+    let can_rx = peripherals.GPIO33; // GREY -> yellow
+    let can_tx = peripherals.GPIO21; // VIOLET -> white
 
     let can = TwaiConfiguration::new(
         peripherals.TWAI0,
