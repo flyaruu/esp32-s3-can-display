@@ -1,24 +1,26 @@
 #![no_std]
 #![no_main]
 
-
 extern crate alloc;
 use alloc::{boxed::Box, format};
 
-mod gauge;
 mod can;
-
+mod gauge;
 
 use bevy_ecs::prelude::*;
 use embedded_can::blocking::Can;
 use embedded_graphics::{
-    mono_font::{ascii::FONT_8X13, iso_8859_14::FONT_10X20, MonoTextStyle}, pixelcolor::Rgb565, prelude::*, primitives::{Circle, PrimitiveStyle, Rectangle}, text::Text, Drawable
+    Drawable,
+    mono_font::{MonoTextStyle, ascii::FONT_8X13, iso_8859_14::FONT_10X20},
+    pixelcolor::Rgb565,
+    prelude::*,
+    primitives::{Circle, PrimitiveStyle, Rectangle},
+    text::Text,
 };
 use embedded_graphics_framebuf::FrameBuf;
 use embedded_graphics_framebuf::backends::FrameBufferBackend;
 use embedded_hal::delay::DelayNs;
 use embedded_hal_bus::spi::ExclusiveDevice;
-use esp_hal::{delay::Delay, twai::{BaudRate, TwaiConfiguration, TwaiMode}};
 use esp_hal::dma::{DmaRxBuf, DmaTxBuf};
 use esp_hal::dma_buffers;
 use esp_hal::{
@@ -28,6 +30,10 @@ use esp_hal::{
     rng::Rng,
     spi::master::{Spi, SpiDmaBus},
     time::Rate,
+};
+use esp_hal::{
+    delay::Delay,
+    twai::{BaudRate, TwaiConfiguration, TwaiMode},
 };
 use esp_println::{logger::init_logger_from_env, println};
 use log::info;
@@ -134,30 +140,11 @@ fn draw_grid<D: DrawTarget<Color = Rgb565>>(
         format!("msgs rcv: {}", game.messages_received).as_str(),
         Point::new(65, 120),
         MonoTextStyle::new(&FONT_10X20, Rgb565::WHITE),
-    ).draw(display)?;
+    )
+    .draw(display)?;
 
     Ok(())
 }
-
-// fn write_generation<D: DrawTarget<Color = Rgb565>>(
-//     display: &mut D,
-//     generation: usize,
-// ) -> Result<(), D::Error> {
-//     let x = 70;
-//     let y = 140;
-
-//     let mut num_str = heapless::String::<20>::new();
-//     write!(num_str, "Generation: {}", generation).unwrap();
-//     Text::new(
-//         num_str.as_str(),
-//         Point::new(x, y),
-//         MonoTextStyle::new(&FONT_8X13, Rgb565::WHITE),
-//     )
-//         .draw(display)?;
-//     Ok(())
-// }
-
-// --- ECS Resources and Systems ---
 
 #[derive(Resource)]
 struct AppStateResource {
@@ -181,17 +168,13 @@ struct DisplayResource {
     display: MyDisplay,
 }
 
-fn update_can_message(
-    mut app_state: ResMut<AppStateResource>,
-    mut can_res: ResMut<CanResource>,
-) {
+fn update_can_message(mut app_state: ResMut<AppStateResource>, mut can_res: ResMut<CanResource>) {
     info!("Reading message!");
     if let Some(msg) = can_res.read_message() {
         info!("Message found");
-        app_state.messages_received+=1;
+        app_state.messages_received += 1;
     }
 }
-
 
 /// Render the game state by drawing into the offscreen framebuffer and then flushing
 /// it to the display via DMA. After drawing the game grid and generation number,
@@ -235,12 +218,12 @@ fn main() -> ! {
             .with_frequency(Rate::from_mhz(80))
             .with_mode(esp_hal::spi::Mode::_0),
     )
-        .unwrap()
-        .with_sck(peripherals.GPIO10)
-        .with_mosi(peripherals.GPIO11)
-        .with_dma(peripherals.DMA_CH0)
-        // .with_miso(peripherals.GPIO14)
-        .with_buffers(dma_rx_buf, dma_tx_buf);
+    .unwrap()
+    .with_sck(peripherals.GPIO10)
+    .with_mosi(peripherals.GPIO11)
+    .with_dma(peripherals.DMA_CH0)
+    // .with_miso(peripherals.GPIO14)
+    .with_buffers(dma_rx_buf, dma_tx_buf);
     let cs_output = Output::new(peripherals.GPIO9, Level::High, OutputConfig::default());
     let spi_delay = Delay::new();
     let spi_device = ExclusiveDevice::new(spi, cs_output, spi_delay).unwrap();
@@ -274,7 +257,6 @@ fn main() -> ! {
 
     info!("Display initialized");
 
-
     let can_rx = peripherals.GPIO33; // GREY -> yellow
     let can_tx = peripherals.GPIO21; // VIOLET -> white
 
@@ -284,9 +266,8 @@ fn main() -> ! {
         can_tx,
         BaudRate::B500K,
         TwaiMode::Normal,
-    ).start();
-
-
+    )
+    .start();
 
     // --- Initialize Game Resources ---
     let mut game = AppStateResource::default();
@@ -304,7 +285,6 @@ fn main() -> ! {
     // Insert the framebuffer resource as a normal resource.
     world.insert_resource(fb_res);
     world.insert_resource(can_instance);
-
 
     let mut schedule = Schedule::default();
     // schedule.add_systems(button_reset_system);
