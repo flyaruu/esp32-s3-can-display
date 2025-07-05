@@ -2,201 +2,71 @@
 #![no_main]
 
 extern crate alloc;
-use alloc::{boxed::Box, format};
+use core::cell::RefCell;
+use core::ptr::addr_of_mut;
+
+use alloc::boxed::Box;
 
 mod can;
 mod gauge;
+mod game;
+mod demo_can;
+mod car_state;
 
-use bevy_ecs::prelude::*;
-use embedded_can::blocking::Can;
+use alloc::sync::Arc;
+use embassy_executor::task;
+use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
+use embassy_sync::blocking_mutex::Mutex;
+use embassy_sync::channel::{Channel, Receiver, Sender};
+use embassy_sync::signal::Signal;
+use embassy_time::Timer;
+use embedded_can::Frame;
 use embedded_graphics::{
-    Drawable,
-    mono_font::{MonoTextStyle, ascii::FONT_8X13, iso_8859_14::FONT_10X20},
     pixelcolor::Rgb565,
     prelude::*,
-    primitives::{Circle, PrimitiveStyle, Rectangle},
-    text::Text,
 };
-use embedded_graphics_framebuf::FrameBuf;
-use embedded_graphics_framebuf::backends::FrameBufferBackend;
 use embedded_hal::delay::DelayNs;
 use embedded_hal_bus::spi::ExclusiveDevice;
 use esp_hal::dma::{DmaRxBuf, DmaTxBuf};
-use esp_hal::dma_buffers;
+use esp_hal::{dma_buffers, Async};
+use esp_hal::gpio::DriveMode;
+use esp_hal::system::{Cpu, CpuControl, Stack};
+use esp_hal::timer::timg::TimerGroup;
+use esp_hal::timer::AnyTimer;
+use esp_hal::twai::{EspTwaiFrame, Twai};
 use esp_hal::{
     Blocking,
-    gpio::{Input, Level, Output, OutputConfig},
+    gpio::{Level, Output, OutputConfig},
     main,
-    rng::Rng,
-    spi::master::{Spi, SpiDmaBus},
+    spi::master::Spi,
     time::Rate,
 };
 use esp_hal::{
     delay::Delay,
     twai::{BaudRate, TwaiConfiguration, TwaiMode},
 };
+use esp_hal_embassy::Executor;
 use esp_println::{logger::init_logger_from_env, println};
-use log::info;
+use log::{info, warn};
 use mipidsi::options::{ColorOrder, Orientation, Rotation};
 use mipidsi::{Builder, models::GC9A01};
 use mipidsi::{interface::SpiInterface, options::ColorInversion};
+use static_cell::StaticCell;
 
-use crate::can::CanResource;
+use crate::car_state::CarState;
+use crate::game::{setup_game, GaugeDisplay};
+
+
+static mut APP_CORE_STACK: Stack<8192> = Stack::new();
+const CHANNEL_SIZE: usize = 16;
+type CanFrameChannel = Channel<CriticalSectionRawMutex, EspTwaiFrame, CHANNEL_SIZE>;
+type CanFrameSender<'ch> = Sender<'ch, CriticalSectionRawMutex, EspTwaiFrame, CHANNEL_SIZE>;
+type CanFrameReceiver<'ch> = Receiver<'ch, CriticalSectionRawMutex, EspTwaiFrame, CHANNEL_SIZE>;
 
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {
     println!("Panic: {}", _info);
     loop {}
-}
-
-/// A wrapper around a boxed array that implements FrameBufferBackend.
-/// This allows the framebuffer to be allocated on the heap.
-pub struct HeapBuffer<C: PixelColor, const N: usize>(Box<[C; N]>);
-
-impl<C: PixelColor, const N: usize> HeapBuffer<C, N> {
-    pub fn new(data: Box<[C; N]>) -> Self {
-        Self(data)
-    }
-}
-
-impl<C: PixelColor, const N: usize> core::ops::Deref for HeapBuffer<C, N> {
-    type Target = [C; N];
-    fn deref(&self) -> &Self::Target {
-        &*self.0
-    }
-}
-
-impl<C: PixelColor, const N: usize> core::ops::DerefMut for HeapBuffer<C, N> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut *self.0
-    }
-}
-
-impl<C: PixelColor, const N: usize> FrameBufferBackend for HeapBuffer<C, N> {
-    type Color = C;
-    fn set(&mut self, index: usize, color: Self::Color) {
-        self.0[index] = color;
-    }
-    fn get(&self, index: usize) -> Self::Color {
-        self.0[index]
-    }
-    fn nr_elements(&self) -> usize {
-        N
-    }
-}
-
-// --- Type Alias for the Concrete Display ---
-// Use the DMA-enabled SPI bus type.
-type MyDisplay = mipidsi::Display<
-    SpiInterface<
-        'static,
-        ExclusiveDevice<SpiDmaBus<'static, Blocking>, Output<'static>, Delay>,
-        Output<'static>,
-    >,
-    GC9A01,
-    Output<'static>,
->;
-
-// --- LCD Resolution and FrameBuffer Type Aliases ---
-const LCD_H_RES: usize = 240;
-const LCD_V_RES: usize = 240;
-const LCD_BUFFER_SIZE: usize = LCD_H_RES * LCD_V_RES;
-
-// We want our pixels stored as Rgb565.
-type FbBuffer = HeapBuffer<Rgb565, LCD_BUFFER_SIZE>;
-// Define a type alias for the complete FrameBuf.
-type MyFrameBuf = FrameBuf<Rgb565, FbBuffer>;
-
-#[derive(Resource)]
-struct FrameBufferResource {
-    frame_buf: MyFrameBuf,
-}
-
-impl FrameBufferResource {
-    fn new() -> Self {
-        // Allocate the framebuffer data on the heap.
-        let fb_data: Box<[Rgb565; LCD_BUFFER_SIZE]> = Box::new([Rgb565::BLACK; LCD_BUFFER_SIZE]);
-        let heap_buffer = HeapBuffer::new(fb_data);
-        let frame_buf = MyFrameBuf::new(heap_buffer, LCD_H_RES, LCD_V_RES);
-        Self { frame_buf }
-    }
-}
-
-/// Draws the game grid using the cell age for color.
-fn draw_grid<D: DrawTarget<Color = Rgb565>>(
-    display: &mut D,
-    game: &Res<AppStateResource>,
-) -> Result<(), D::Error> {
-    let border_color = Rgb565::new(230, 230, 230);
-
-    Circle::with_center(Point::new(120, 120), 140)
-        .into_styled(PrimitiveStyle::with_fill(Rgb565::BLUE))
-        .draw(display)?;
-    Rectangle::new(Point::new(10, 10), Size::new(7, 7))
-        .into_styled(PrimitiveStyle::with_fill(border_color))
-        .draw(display)?;
-
-    Text::new(
-        format!("msgs rcv: {}", game.messages_received).as_str(),
-        Point::new(65, 120),
-        MonoTextStyle::new(&FONT_10X20, Rgb565::WHITE),
-    )
-    .draw(display)?;
-
-    Ok(())
-}
-
-#[derive(Resource)]
-struct AppStateResource {
-    messages_received: u32,
-}
-
-impl Default for AppStateResource {
-    fn default() -> Self {
-        Self {
-            messages_received: 0,
-        }
-    }
-}
-
-#[derive(Resource)]
-struct RngResource(Rng);
-
-// Because our display type contains DMA descriptors and raw pointers, it isn’t Sync.
-// We wrap it as a NonSend resource so that Bevy doesn’t require Sync.
-struct DisplayResource {
-    display: MyDisplay,
-}
-
-fn update_can_message(mut app_state: ResMut<AppStateResource>, mut can_res: ResMut<CanResource>) {
-    info!("Reading message!");
-    if let Some(msg) = can_res.read_message() {
-        info!("Message found");
-        app_state.messages_received += 1;
-    }
-}
-
-/// Render the game state by drawing into the offscreen framebuffer and then flushing
-/// it to the display via DMA. After drawing the game grid and generation number,
-/// we overlay centered text.
-fn render_system(
-    mut display_res: NonSendMut<DisplayResource>,
-    game: Res<AppStateResource>,
-    mut fb_res: ResMut<FrameBufferResource>,
-) {
-    // Clear the framebuffer.
-    fb_res.frame_buf.clear(Rgb565::BLACK).unwrap();
-    // Draw the game grid (using the age-based color) and generation number.
-    draw_grid(&mut fb_res.frame_buf, &game).unwrap();
-    // write_generation(&mut fb_res.frame_buf, game.generation).unwrap();
-
-    // Define the area covering the entire framebuffer.
-    let area = Rectangle::new(Point::zero(), fb_res.frame_buf.size());
-    // Flush the framebuffer to the physical display.
-    display_res
-        .display
-        .fill_contiguous(&area, fb_res.frame_buf.data.iter().copied())
-        .unwrap();
 }
 
 #[main]
@@ -205,6 +75,65 @@ fn main() -> ! {
     // Increase heap size as needed.
     esp_alloc::heap_allocator!(size: 150000);
     init_logger_from_env();
+
+    let can_frame_channel: CanFrameChannel = Channel::new();
+    let can_frame_channel = Box::leak(Box::new(can_frame_channel));
+    let sender = can_frame_channel.sender();
+
+    let mut cpu_control = CpuControl::new(peripherals.CPU_CTRL);
+
+    let mut car_state = Arc::new(Mutex::new(RefCell::new(CarState::default())));
+    
+    static LED_CTRL: StaticCell<Signal<CriticalSectionRawMutex, bool>> = StaticCell::new();
+    let led_ctrl_signal = &*LED_CTRL.init(Signal::new());
+
+    let led_green = Output::new(peripherals.GPIO17, Level::Low, OutputConfig::default());
+    let led_yellow = Output::new(peripherals.GPIO18, Level::Low, OutputConfig::default());
+
+
+    let can_rx = peripherals.GPIO33; // GREY -> yellow
+    let can_tx = peripherals.GPIO21; // VIOLET -> white
+
+
+
+
+
+    let timg0 = TimerGroup::new(peripherals.TIMG0);
+    let timer0: AnyTimer = timg0.timer0.into();
+    let timer1: AnyTimer = timg0.timer1.into();
+    esp_hal_embassy::init([timer0, timer1]);
+
+    let car_state_async_side = car_state.clone();
+    let _guard = cpu_control
+        .start_app_core(unsafe { &mut *addr_of_mut!(APP_CORE_STACK) }, move || {
+
+            let can = TwaiConfiguration::new(
+                    peripherals.TWAI0,
+                    can_rx,
+                    can_tx,
+                    BaudRate::B500K,
+                    TwaiMode::Normal,
+                )
+                .into_async()
+                .start();
+            static EXECUTOR: StaticCell<Executor> = StaticCell::new();
+            let executor = EXECUTOR.init(Executor::new());
+            let receiver = can_frame_channel.receiver();
+            let sender = can_frame_channel.sender();
+            executor.run(|spawner| {
+                spawner.spawn(control_led_green(led_green, led_ctrl_signal)).ok();
+                spawner.spawn(control_led_yellow(led_yellow)).ok();
+                spawner.must_spawn(frame_received(can, sender));
+                spawner.must_spawn(car_state_maintainer(car_state_async_side.clone(), receiver));
+            });
+        })
+        .unwrap();
+
+    // Sends periodic messages to control_led, enabling or disabling it.
+    println!(
+        "Starting enable_disable_led() on core {}",
+        Cpu::current() as usize
+    );
 
     // --- DMA Buffers for SPI ---
     let (rx_buffer, rx_descriptors, tx_buffer, tx_descriptors) = dma_buffers!(1024);
@@ -240,7 +169,7 @@ fn main() -> ! {
     // Reset pin
     let reset = Output::new(peripherals.GPIO14, Level::Low, OutputConfig::default());
     // Initialize the display using mipidsi's builder.
-    let mut display: MyDisplay = Builder::new(GC9A01, di)
+    let mut display: GaugeDisplay = Builder::new(GC9A01, di)
         .reset_pin(reset)
         .display_size(240, 240)
         .orientation(Orientation::new().rotate(Rotation::Deg90))
@@ -257,45 +186,82 @@ fn main() -> ! {
 
     info!("Display initialized");
 
-    let can_rx = peripherals.GPIO33; // GREY -> yellow
-    let can_tx = peripherals.GPIO21; // VIOLET -> white
 
-    let can = TwaiConfiguration::new(
-        peripherals.TWAI0,
-        can_rx,
-        can_tx,
-        BaudRate::B500K,
-        TwaiMode::Normal,
-    )
-    .start();
 
-    // --- Initialize Game Resources ---
-    let mut game = AppStateResource::default();
-    let mut rng_instance = Rng::new(peripherals.RNG);
-
-    let can_instance = CanResource::new(can);
-    // Create the framebuffer resource.
-    let fb_res = FrameBufferResource::new();
-
-    let mut world = World::default();
-    world.insert_resource(game);
-    world.insert_resource(RngResource(rng_instance));
-    // Insert the display as a non-send resource because its DMA pointers are not Sync.
-    world.insert_non_send_resource(DisplayResource { display });
-    // Insert the framebuffer resource as a normal resource.
-    world.insert_resource(fb_res);
-    world.insert_resource(can_instance);
-
-    let mut schedule = Schedule::default();
-    // schedule.add_systems(button_reset_system);
-    // schedule.add_systems(update_game_state);
-    schedule.add_systems(update_can_message);
-    schedule.add_systems(render_system);
-
+    let (mut schedule,mut world) = setup_game(peripherals.RNG, display, car_state.clone());
     let mut loop_delay = Delay::new();
 
     loop {
         schedule.run(&mut world);
-        loop_delay.delay_ms(50u32);
+        // loop_delay.delay_ms(10u32);
+    }
+}
+
+#[task]
+async fn car_state_maintainer(car_state: Arc<Mutex<CriticalSectionRawMutex, RefCell<CarState>>>, receiver: CanFrameReceiver<'static>) {
+    loop {
+        let msg= receiver.receive().await;
+        car_state.lock(|state| {
+            state.borrow_mut().process_message(msg);
+        });
+        // {
+        //     let mut state = car_state.lock().await;
+        //     state.process_message(msg);
+        // }
+    }
+}
+
+#[task]
+async fn frame_received(mut twai: Twai<'static, Async>, sender: CanFrameSender<'static>) {
+    loop {
+        match twai.receive_async().await {
+            Ok(message) => sender.send(message).await,
+            Err(e) => {
+                warn!("Error reading message: {:?}", e);
+            },
+        }
+        info!("Message looping!");
+    }
+}
+
+#[embassy_executor::task]
+async fn control_led_green(
+    mut led: Output<'static>,
+    control: &'static Signal<CriticalSectionRawMutex, bool>,
+) {
+    info!("Starting green on core {}", Cpu::current() as usize);
+    loop {
+            info!("green LED on core: {}", Cpu::current() as usize);
+            led.set_high();
+            Timer::after_secs(1).await;
+            info!("green LED off on core: {}", Cpu::current() as usize);
+            led.set_low();
+            Timer::after_secs(1).await;
+
+    }
+    // loop {
+    //     if control.wait().await {
+    //         info!("LED on");
+    //         led.set_low();
+    //     } else {
+    //         info!("LED off");
+    //         led.set_high();
+    //     }
+    // }
+}
+
+#[embassy_executor::task]
+async fn control_led_yellow(
+    mut led: Output<'static>,
+) {
+    info!("Starting yellow on core {}", Cpu::current() as usize);
+    loop {
+            info!("yellow LED on core: {}", Cpu::current() as usize);
+            led.set_high();
+            Timer::after_millis(300).await;
+            info!("yellow LED off on core: {}", Cpu::current() as usize);
+            led.set_low();
+            Timer::after_millis(100).await;
+
     }
 }
