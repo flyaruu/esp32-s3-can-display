@@ -1,4 +1,4 @@
-use core::cell::RefCell;
+use core::{cell::RefCell, str::FromStr};
 
 use alloc::{boxed::Box, format, sync::Arc};
 use bevy_ecs::{resource::Resource, schedule::Schedule, system::{NonSendMut, Res, ResMut}, world::World};
@@ -9,7 +9,7 @@ use embedded_hal_bus::spi::ExclusiveDevice;
 use esp_hal::{delay::Delay, gpio::Output, spi::master::SpiDmaBus, time::Instant, timer::systimer::SystemTimer, Blocking};
 use mipidsi::{interface::SpiInterface, models::GC9A01};
 
-use crate::car_state::CarState;
+use crate::{car_state::CarState, gauge::{DashboardContext, Gauge}};
 
 /// A wrapper around a boxed array that implements FrameBufferBackend.
 /// This allows the framebuffer to be allocated on the heap.
@@ -131,6 +131,8 @@ fn draw_grid<D: DrawTarget<Color = Rgb565>>(
 struct AppStateResource {
     state: Arc<Mutex<CriticalSectionRawMutex,RefCell<CarState>>>,
     last_frame: Instant,
+    gauge: Gauge<'static,240,240,10,80,255>,
+    gauge_context: DashboardContext<'static,240,240>,
 }
 
 // Because our display type contains DMA descriptors and raw pointers, it isn’t Sync.
@@ -152,8 +154,11 @@ fn render_system(
     // Clear the framebuffer.
     fb_res.frame_buf.clear(Rgb565::BLACK).unwrap();
     // Draw the game grid (using the age-based color) and generation number.
-    draw_grid(&mut fb_res.frame_buf, &game, fps).unwrap();
-
+    // draw_grid(&mut fb_res.frame_buf, &game, fps).unwrap();
+    let mut gauge = &game.gauge;
+    let dashboard_context = &game.gauge_context;
+    gauge.draw_static(&mut fb_res.frame_buf,&dashboard_context);
+    gauge.draw_dynamic(&mut fb_res.frame_buf,&dashboard_context);
     // Define the area covering the entire framebuffer.
     let area = Rectangle::new(Point::zero(), fb_res.frame_buf.size());
     // Flush the framebuffer to the physical display.
@@ -169,6 +174,8 @@ pub(crate) fn setup_game(display: GaugeDisplay, car_state: Arc<Mutex<CriticalSec
     let game = AppStateResource {
         state: car_state,
         last_frame: Instant::now(),
+        gauge: crate::gauge::Gauge::new_speedo(Point { x: 120, y: 120 },["1","2","3","4","5","6","7","8","9","10","11","12","13"],heapless::String::from_str("xxxxxx").unwrap(),heapless::String::from_str("xxxxxx").unwrap()),
+        gauge_context: DashboardContext::new()
     };
     let instant = Instant::now();
     let fb_res = FrameBufferResource::new();

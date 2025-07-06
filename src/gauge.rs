@@ -1,27 +1,21 @@
 use core::{
-    cmp::{max, min},
-    fmt::Write,
+    cmp::{max, min}, convert::Infallible, f32::consts::PI, fmt::Write
 };
 
 use alloc::format;
 
 use embedded_graphics::{
-    Drawable,
-    framebuffer::Framebuffer,
-    geometry::{Angle, Point, Size},
-    mono_font::MonoTextStyle,
-    pixelcolor::{
-        Rgb565,
-        raw::{BigEndian, RawU16},
-    },
-    primitives::{
+    framebuffer::Framebuffer, geometry::{Angle, Point, Size}, mono_font::{ascii::{FONT_10X20, FONT_8X13}, MonoTextStyle, MonoTextStyleBuilder}, pixelcolor::{
+        raw::{BigEndian, RawU16}, Rgb565
+    }, prelude::{Dimensions, DrawTarget, RgbColor}, primitives::{
         Arc, Circle, Line, PrimitiveStyle, PrimitiveStyleBuilder, Rectangle, StyledDrawable,
-    },
-    text::Text,
+    }, text::Text, Drawable
 };
 use heapless::String;
+use log::info;
 // use num_traits::ToPrimitive;
 use num_traits::cast::ToPrimitive;
+use num_traits::Float;
 
 // use crate::dashboard::{DashboardContext, I_L_OFFSET, I_N_OFFSET, I_OUTER_OFFSET, I_P_OFFSET};
 pub const OUTER_OFFSET: f32 = 10.0;
@@ -133,9 +127,12 @@ impl<
         }
     }
 
-    pub fn draw_static(
+    // fn draw_grid<D: DrawTarget<Color = Rgb565>>(
+    // display: &mut D,
+
+    pub fn draw_static<D: DrawTarget<Color = Rgb565, Error = Infallible>>(
         &self,
-        framebuffer: &mut Framebuffer<Rgb565, RawU16, BigEndian, W, H, BUFFER>,
+        framebuffer: &mut D,
         context: &DashboardContext<W, H>,
     ) {
         Arc::with_center(
@@ -198,9 +195,9 @@ impl<
         }
     }
 
-    pub fn draw_clear_mask(
+    pub fn draw_clear_mask<D: DrawTarget<Color = Rgb565, Error = Infallible>>(
         &self,
-        framebuffer: &mut Framebuffer<Rgb565, RawU16, BigEndian, W, H, BUFFER>,
+        framebuffer: &mut D,
         context: &DashboardContext<W, H>,
     ) {
         Circle::with_center(
@@ -219,9 +216,9 @@ impl<
         .unwrap();
     }
 
-    pub fn draw_dynamic(
+    pub fn draw_dynamic<D: DrawTarget<Color = Rgb565, Error = Infallible>>(
         &mut self,
-        framebuffer: &mut Framebuffer<Rgb565, RawU16, BigEndian, W, H, BUFFER>,
+        framebuffer: &mut D,
         context: &DashboardContext<W, H>,
     ) {
         // Dynamic
@@ -288,5 +285,136 @@ impl<
         )
         .draw(framebuffer)
         .unwrap();
+    }
+}
+
+
+impl <'a, const GAUGE_WIDTH: usize,const GAUGE_HEIGHT: usize> DashboardContext<'a,GAUGE_WIDTH,GAUGE_HEIGHT> {
+    pub fn new()->Self {
+        let r: f32 = (GAUGE_WIDTH as i32 / 2).to_f32().unwrap();
+        let cx = (GAUGE_WIDTH / 2) as i32;
+        let cy = (GAUGE_HEIGHT / 2) as i32;
+        let centre = Point::new(cx, cy);
+        let clearing_circle_bounds = Circle::with_center(centre, (2.0*(r - L_OFFSET)).to_u32().unwrap()).bounding_box();
+        let back_color = Rgb565::from(RawU16::from(0x0026));
+        let gauge_color = Rgb565::from(RawU16::from(0x055D));
+        let purple = Rgb565::from(RawU16::from(0xEA16));
+        let needle_color = Rgb565::from(RawU16::from(0xF811));
+        let outer_style = PrimitiveStyleBuilder::new()
+            .stroke_color(gauge_color)
+            .stroke_width(3)
+            .build();
+        let inner_style = PrimitiveStyleBuilder::new()
+            .stroke_color(Rgb565::WHITE)
+            .stroke_width(3)
+            .build();
+        let redline_style = PrimitiveStyleBuilder::new()
+            .stroke_color(purple)
+            .stroke_width(3)
+            .build();
+        let tick_style = PrimitiveStyleBuilder::new()
+            .stroke_color(Rgb565::WHITE)
+            .stroke_width(2)
+            .build();
+        let red_tick_style = PrimitiveStyleBuilder::new()
+            .stroke_color(purple)
+            .stroke_width(2)
+            .build();
+        let needle_style = PrimitiveStyleBuilder::new()
+            .stroke_color(needle_color)
+            .stroke_width(4)
+            .build();
+        let headlight_on_style = PrimitiveStyleBuilder::new()
+            .fill_color(Rgb565::GREEN)
+            .stroke_width(1)
+            .stroke_color(Rgb565::GREEN)
+            .build();
+        let headlight_high_style = PrimitiveStyleBuilder::new()
+            .fill_color(gauge_color)
+            .stroke_width(1)
+            .stroke_color(gauge_color)
+            .build();
+
+        let indicator_on_style = PrimitiveStyleBuilder::new()
+            .stroke_color(Rgb565::GREEN)
+            .stroke_width(2)
+            .build();
+        let blinker_on_style = PrimitiveStyleBuilder::new()
+            .fill_color(Rgb565::GREEN)
+            .build();
+        let blinker_off_style = PrimitiveStyleBuilder::new()
+            .fill_color(Rgb565::new(0x4, 0x8, 0x4))
+            .build();
+        // let color = Rgb565::new(0x33, 0x33, 0x33);
+
+
+        let light_off_style = PrimitiveStyleBuilder::new()
+            .stroke_color(Rgb565::new(0x4, 0x8, 0x4))
+            .stroke_width(1)
+            .fill_color(Rgb565::new(0x4, 0x8, 0x4))
+            .build();
+        let text_style = MonoTextStyleBuilder::new()
+            .text_color(Rgb565::WHITE)
+            .font(&FONT_8X13)
+            .build();
+        let red_text_style = MonoTextStyleBuilder::new()
+            .text_color(purple)
+            .font(&FONT_8X13)
+            .build();
+
+        let centre_text_style = MonoTextStyleBuilder::new()
+            .text_color(Rgb565::WHITE)
+            .font(&FONT_10X20)
+            .build();
+
+        let mut context: DashboardContext<GAUGE_WIDTH, GAUGE_HEIGHT> = DashboardContext { 
+            outer: [Point{ x: 0, y: 0 }; 360],
+            p_point: [Point{ x: 0, y: 0 }; 360],
+            l_point:  [Point{ x: 0, y: 0 }; 360],
+            n_point:  [Point{ x: 0, y: 0 }; 360],
+            centre,
+            back_color,
+            gauge_color,
+            purple,
+            needle_color,
+            outer_style,
+            inner_style,
+            redline_style,
+            tick_style,
+            red_tick_style,
+            needle_style,
+            headlight_on_style,
+            headlight_high_style,
+            indicator_on_style,
+            blinker_on_style,
+            blinker_off_style,
+            light_off_style,            
+            text_style,
+            red_text_style,
+            centre_text_style,
+            clearing_circle_bounds,
+        };
+        for i in 0..360 {
+            let a = ((i + 120) % 360) as i32;
+            let angle_rad = a.to_f32().unwrap() * PI / 180.0;
+            info!("i: {} a: {} a_rad: {}",i,a,angle_rad);
+            context.outer[i] = Point {
+                x: ((r - OUTER_OFFSET) * angle_rad.cos()).to_i32().unwrap() + cx,
+                y: ((r - OUTER_OFFSET) * angle_rad.sin()).to_i32().unwrap() + cy,
+            };
+            context.p_point[i] = Point {
+                x: ((r - P_OFFSET) * angle_rad.cos()).to_i32().unwrap() + cx,
+                y: ((r - P_OFFSET) * angle_rad.sin()).to_i32().unwrap() + cy,
+            };
+            context.l_point[i] = Point {
+                x: ((r - L_OFFSET) * angle_rad.cos()).to_i32().unwrap() + cx,
+                y: ((r - L_OFFSET) * angle_rad.sin()).to_i32().unwrap() + cy,
+            };
+            context.n_point[i] = Point {
+                x: ((r - N_OFFSET) * angle_rad.cos()).to_i32().unwrap() + cx,
+                y: ((r - N_OFFSET) * angle_rad.sin()).to_i32().unwrap() + cy,
+            };
+        }
+        context
     }
 }
