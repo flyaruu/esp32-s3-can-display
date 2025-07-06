@@ -7,30 +7,31 @@ use core::ptr::addr_of_mut;
 
 use alloc::boxed::Box;
 
-mod can;
+// mod can;
 mod gauge;
 mod game;
-mod demo_can;
+// mod demo_can;
 mod car_state;
 
 use alloc::sync::Arc;
+use circ_buffer::RingBuffer;
 use embassy_executor::task;
-use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
+use embassy_sync::blocking_mutex::raw::{CriticalSectionRawMutex, NoopRawMutex};
 use embassy_sync::blocking_mutex::Mutex;
 use embassy_sync::channel::{Channel, Receiver, Sender};
-use embassy_sync::signal::Signal;
 use embassy_time::Timer;
-use embedded_can::Frame;
 use embedded_graphics::{
     pixelcolor::Rgb565,
     prelude::*,
 };
 use embedded_hal::delay::DelayNs;
 use embedded_hal_bus::spi::ExclusiveDevice;
+use esp_hal::analog::adc::{Adc, AdcConfig, AdcPin, Attenuation};
 use esp_hal::dma::{DmaRxBuf, DmaTxBuf};
+use esp_hal::peripherals::{ADC1, GPIO1};
+use esp_hal::timer::systimer::SystemTimer;
 use esp_hal::{dma_buffers, Async};
-use esp_hal::gpio::DriveMode;
-use esp_hal::system::{Cpu, CpuControl, Stack};
+use esp_hal::system::{CpuControl, Stack};
 use esp_hal::timer::timg::TimerGroup;
 use esp_hal::timer::AnyTimer;
 use esp_hal::twai::{EspTwaiFrame, Twai};
@@ -69,6 +70,8 @@ fn panic(_info: &core::panic::PanicInfo) -> ! {
     loop {}
 }
 
+type VoltageAdcPin = AdcPin<GPIO1<'static>,ADC1<'static>>;
+type VoltageAdc = Adc<'static, ADC1<'static>, Blocking>;
 #[main]
 fn main() -> ! {
     let peripherals = esp_hal::init(esp_hal::Config::default());
@@ -78,31 +81,20 @@ fn main() -> ! {
 
     let can_frame_channel: CanFrameChannel = Channel::new();
     let can_frame_channel = Box::leak(Box::new(can_frame_channel));
-    let sender = can_frame_channel.sender();
-
+    
     let mut cpu_control = CpuControl::new(peripherals.CPU_CTRL);
 
-    let mut car_state = Arc::new(Mutex::new(RefCell::new(CarState::default())));
+    let car_state = Arc::new(Mutex::new(RefCell::new(CarState::default())));
     
-    static LED_CTRL: StaticCell<Signal<CriticalSectionRawMutex, bool>> = StaticCell::new();
-    let led_ctrl_signal = &*LED_CTRL.init(Signal::new());
-
-    let led_green = Output::new(peripherals.GPIO17, Level::Low, OutputConfig::default());
-    let led_yellow = Output::new(peripherals.GPIO18, Level::Low, OutputConfig::default());
-
+    let systimer = SystemTimer::new(peripherals.SYSTIMER);
 
     let can_rx = peripherals.GPIO33; // GREY -> yellow
     let can_tx = peripherals.GPIO21; // VIOLET -> white
-
-
-
-
 
     let timg0 = TimerGroup::new(peripherals.TIMG0);
     let timer0: AnyTimer = timg0.timer0.into();
     let timer1: AnyTimer = timg0.timer1.into();
     esp_hal_embassy::init([timer0, timer1]);
-
     let car_state_async_side = car_state.clone();
     let _guard = cpu_control
         .start_app_core(unsafe { &mut *addr_of_mut!(APP_CORE_STACK) }, move || {
@@ -120,20 +112,18 @@ fn main() -> ! {
             let executor = EXECUTOR.init(Executor::new());
             let receiver = can_frame_channel.receiver();
             let sender = can_frame_channel.sender();
+            let mut adc_config = AdcConfig::default();
+            let mut adc_pin = adc_config.enable_pin(peripherals.GPIO1, Attenuation::_0dB);
+            let mut voltage_adc = Adc::new(peripherals.ADC1, adc_config);
+
+            let a= voltage_adc.read_oneshot(&mut adc_pin);
             executor.run(|spawner| {
-                spawner.spawn(control_led_green(led_green, led_ctrl_signal)).ok();
-                spawner.spawn(control_led_yellow(led_yellow)).ok();
                 spawner.must_spawn(frame_received(can, sender));
                 spawner.must_spawn(car_state_maintainer(car_state_async_side.clone(), receiver));
+                spawner.must_spawn(voltage_calculator(adc_pin, voltage_adc, car_state_async_side.clone()));
             });
         })
         .unwrap();
-
-    // Sends periodic messages to control_led, enabling or disabling it.
-    println!(
-        "Starting enable_disable_led() on core {}",
-        Cpu::current() as usize
-    );
 
     // --- DMA Buffers for SPI ---
     let (rx_buffer, rx_descriptors, tx_buffer, tx_descriptors) = dma_buffers!(1024);
@@ -147,12 +137,11 @@ fn main() -> ! {
             .with_frequency(Rate::from_mhz(80))
             .with_mode(esp_hal::spi::Mode::_0),
     )
-    .unwrap()
-    .with_sck(peripherals.GPIO10)
-    .with_mosi(peripherals.GPIO11)
-    .with_dma(peripherals.DMA_CH0)
-    // .with_miso(peripherals.GPIO14)
-    .with_buffers(dma_rx_buf, dma_tx_buf);
+        .unwrap()
+        .with_sck(peripherals.GPIO10)
+        .with_mosi(peripherals.GPIO11)
+        .with_dma(peripherals.DMA_CH0)
+        .with_buffers(dma_rx_buf, dma_tx_buf);
     let cs_output = Output::new(peripherals.GPIO9, Level::High, OutputConfig::default());
     let spi_delay = Delay::new();
     let spi_device = ExclusiveDevice::new(spi, cs_output, spi_delay).unwrap();
@@ -184,16 +173,10 @@ fn main() -> ! {
     let mut backlight = Output::new(peripherals.GPIO2, Level::High, OutputConfig::default());
     backlight.set_high();
 
-    info!("Display initialized");
-
-
-
-    let (mut schedule,mut world) = setup_game(peripherals.RNG, display, car_state.clone());
-    let mut loop_delay = Delay::new();
-
+    let (mut schedule,mut world) = setup_game(display, car_state.clone(), systimer);
     loop {
         schedule.run(&mut world);
-        // loop_delay.delay_ms(10u32);
+        display_delay.delay_ms(10u32);
     }
 }
 
@@ -204,10 +187,6 @@ async fn car_state_maintainer(car_state: Arc<Mutex<CriticalSectionRawMutex, RefC
         car_state.lock(|state| {
             state.borrow_mut().process_message(msg);
         });
-        // {
-        //     let mut state = car_state.lock().await;
-        //     state.process_message(msg);
-        // }
     }
 }
 
@@ -220,48 +199,26 @@ async fn frame_received(mut twai: Twai<'static, Async>, sender: CanFrameSender<'
                 warn!("Error reading message: {:?}", e);
             },
         }
-        info!("Message looping!");
     }
 }
 
-#[embassy_executor::task]
-async fn control_led_green(
-    mut led: Output<'static>,
-    control: &'static Signal<CriticalSectionRawMutex, bool>,
-) {
-    info!("Starting green on core {}", Cpu::current() as usize);
+#[task]
+async fn voltage_calculator(mut pin: VoltageAdcPin, mut adc: VoltageAdc, car_state: Arc<Mutex<CriticalSectionRawMutex, RefCell<CarState>>>)->! {
+    let mut buffer: RingBuffer<f32,16> = RingBuffer::new();
     loop {
-            info!("green LED on core: {}", Cpu::current() as usize);
-            led.set_high();
-            Timer::after_secs(1).await;
-            info!("green LED off on core: {}", Cpu::current() as usize);
-            led.set_low();
-            Timer::after_secs(1).await;
-
-    }
-    // loop {
-    //     if control.wait().await {
-    //         info!("LED on");
-    //         led.set_low();
-    //     } else {
-    //         info!("LED off");
-    //         led.set_high();
-    //     }
-    // }
-}
-
-#[embassy_executor::task]
-async fn control_led_yellow(
-    mut led: Output<'static>,
-) {
-    info!("Starting yellow on core {}", Cpu::current() as usize);
-    loop {
-            info!("yellow LED on core: {}", Cpu::current() as usize);
-            led.set_high();
-            Timer::after_millis(300).await;
-            info!("yellow LED off on core: {}", Cpu::current() as usize);
-            led.set_low();
-            Timer::after_millis(100).await;
-
+        if let Ok(value) = adc.read_oneshot(&mut pin) {
+            info!("Raw: {}", value);
+            let converted = 3.3 / ((1<<12) * 3 * value) as f32;
+            info!("Converted: {}", converted);
+            info!("Length: {}",buffer.get_size());
+            buffer.push(converted);
+            let sum: f32 = buffer.iter().sum();
+            car_state.lock(|state| {
+                state.borrow_mut().set_voltage(sum / buffer.len() as f32);
+            });
+        } else {
+            info!("Would block");
+        }
+        Timer::after_millis(100).await
     }
 }

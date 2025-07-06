@@ -2,16 +2,14 @@ use core::cell::RefCell;
 
 use alloc::{boxed::Box, format, sync::Arc};
 use bevy_ecs::{resource::Resource, schedule::Schedule, system::{NonSendMut, Res, ResMut}, world::World};
-use embassy_sync::{blocking_mutex::{raw::CriticalSectionRawMutex, Mutex}, channel::Channel};
-use embedded_can::Frame;
-use embedded_graphics::{mono_font::{ascii::FONT_10X20, MonoTextStyle}, pixelcolor::Rgb565, prelude::*, primitives::{Circle, PrimitiveStyle, Rectangle}, text::Text};
+use embassy_sync::blocking_mutex::{raw::CriticalSectionRawMutex, Mutex};
+use embedded_graphics::{mono_font::{ascii::{FONT_10X20, FONT_6X9}, MonoTextStyle}, pixelcolor::Rgb565, prelude::*, primitives::{Circle, PrimitiveStyle, Rectangle}, text::Text};
 use embedded_graphics_framebuf::{backends::FrameBufferBackend, FrameBuf};
 use embedded_hal_bus::spi::ExclusiveDevice;
-use esp_hal::{delay::Delay, gpio::Output, peripherals::RNG, rng::Rng, spi::master::SpiDmaBus, twai::Twai, Blocking};
-use log::info;
+use esp_hal::{delay::Delay, gpio::Output, spi::master::SpiDmaBus, time::Instant, timer::systimer::SystemTimer, Blocking};
 use mipidsi::{interface::SpiInterface, models::GC9A01};
 
-use crate::{can::CanResource, car_state::CarState, demo_can::DemoCanResource};
+use crate::car_state::CarState;
 
 /// A wrapper around a boxed array that implements FrameBufferBackend.
 /// This allows the framebuffer to be allocated on the heap.
@@ -90,7 +88,8 @@ impl FrameBufferResource {
 /// Draws the game grid using the cell age for color.
 fn draw_grid<D: DrawTarget<Color = Rgb565>>(
     display: &mut D,
-    game: &Res<AppStateResource>,
+    game: &ResMut<AppStateResource>,
+    fps: u64,
 ) -> Result<(), D::Error> {
     let border_color = Rgb565::new(230, 230, 230);
 
@@ -101,13 +100,26 @@ fn draw_grid<D: DrawTarget<Color = Rgb565>>(
         .into_styled(PrimitiveStyle::with_fill(border_color))
         .draw(display)?;
 
-    let count = game.state.lock(|state| {
-        state.borrow().message_count()
+    let cloned = game.state.lock(|state| {
+        state.borrow().clone()
     });
 
     Text::new(
-        format!("msgs rcv: {}", count).as_str(),
+        format!("msgs rcv: {}", cloned.message_count()).as_str(),
         Point::new(65, 120),
+        MonoTextStyle::new(&FONT_10X20, Rgb565::WHITE),
+    )
+    .draw(display)?;
+    Text::new(
+        format!("voltage: {}", cloned.voltage()).as_str(),
+        Point::new(65, 80),
+        MonoTextStyle::new(&FONT_10X20, Rgb565::WHITE),
+    )
+    .draw(display)?;
+
+    Text::new(
+        format!("fps: {}", fps).as_str(),
+        Point::new(65, 170),
         MonoTextStyle::new(&FONT_10X20, Rgb565::WHITE),
     )
     .draw(display)?;
@@ -118,10 +130,8 @@ fn draw_grid<D: DrawTarget<Color = Rgb565>>(
 #[derive(Resource)]
 struct AppStateResource {
     state: Arc<Mutex<CriticalSectionRawMutex,RefCell<CarState>>>,
+    last_frame: Instant,
 }
-
-#[derive(Resource)]
-struct RngResource(Rng);
 
 // Because our display type contains DMA descriptors and raw pointers, it isn’t Sync.
 // We wrap it as a NonSend resource so that Bevy doesn’t require Sync.
@@ -129,34 +139,20 @@ struct DisplayResource {
     display: GaugeDisplay,
 }
 
-// fn update_can_message(mut app_state: ResMut<AppStateResource>, mut can_res: ResMut<CanResource>) {
-//     info!("Reading message!");
-//     if let Some(msg) = can_res.read_message() {
-//         info!("Message found");
-//         app_state.messages_received += 1;
-//     }
-// }
-
-// fn update_demo_can_message(mut app_state: ResMut<AppStateResource>, mut can_res: ResMut<DemoCanResource>) {
-//     if let Some(msg) = can_res.read_message() {
-//         app_state.messages_received += 1;
-//     }
-// }
-
-
-/// Render the game state by drawing into the offscreen framebuffer and then flushing
-/// it to the display via DMA. After drawing the game grid and generation number,
-/// we overlay centered text.
 fn render_system(
     mut display_res: NonSendMut<DisplayResource>,
-    game: Res<AppStateResource>,
+    mut game: ResMut<AppStateResource>,
     mut fb_res: ResMut<FrameBufferResource>,
 ) {
+    let now = Instant::now();
+    let duration = now - game.last_frame;
+    game.as_mut().last_frame = now;
+    let fps = 1000 / duration.as_millis();
+
     // Clear the framebuffer.
     fb_res.frame_buf.clear(Rgb565::BLACK).unwrap();
     // Draw the game grid (using the age-based color) and generation number.
-    draw_grid(&mut fb_res.frame_buf, &game).unwrap();
-    // write_generation(&mut fb_res.frame_buf, game.generation).unwrap();
+    draw_grid(&mut fb_res.frame_buf, &game, fps).unwrap();
 
     // Define the area covering the entire framebuffer.
     let area = Rectangle::new(Point::zero(), fb_res.frame_buf.size());
@@ -168,32 +164,21 @@ fn render_system(
 }
 
 
-pub(crate) fn setup_game(rng: RNG<'static>, display: GaugeDisplay, car_state: Arc<Mutex<CriticalSectionRawMutex, RefCell<CarState>>>)->(Schedule, World) {
+pub(crate) fn setup_game(display: GaugeDisplay, car_state: Arc<Mutex<CriticalSectionRawMutex, RefCell<CarState>>>, system_timer: SystemTimer<'static>)->(Schedule, World) {
     // --- Initialize Game Resources ---
     let game = AppStateResource {
         state: car_state,
+        last_frame: Instant::now(),
     };
-    let rng_instance = Rng::new(rng);
-
-    // let can_instance = CanResource::new(can);
-    // let demo_can_instance = DemoCanResource::new();
-    // Create the framebuffer resource.
+    let instant = Instant::now();
     let fb_res = FrameBufferResource::new();
 
     let mut world = World::default();
     world.insert_resource(game);
-    world.insert_resource(RngResource(rng_instance));
-    // Insert the display as a non-send resource because its DMA pointers are not Sync.
     world.insert_non_send_resource(DisplayResource { display });
-    // Insert the framebuffer resource as a normal resource.
     world.insert_resource(fb_res);
-    // world.insert_resource(can_instance);
-    // world.insert_resource(demo_can_instance);
 
     let mut schedule = Schedule::default();
-    // schedule.add_systems(update_can_message);
-    // add switch
-    // schedule.add_systems(update_demo_can_message);
     schedule.add_systems(render_system);
     (schedule, world)
 }

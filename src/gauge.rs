@@ -79,9 +79,6 @@ pub struct DashboardContext<'a, const GAUGE_WIDTH: usize, const GAUGE_HEIGHT: us
     pub red_text_style: MonoTextStyle<'a, Rgb565>,
     pub centre_text_style: MonoTextStyle<'a, Rgb565>,
     pub clearing_circle_bounds: Rectangle,
-    //     let gauge_color = Rgb565::from(RawU16::from(0x055D));
-    //     let purple = Rgb565::from(RawU16::from(0xEA16));
-    //     let needle_color = Rgb565::from(RawU16::from(0xF811));
 }
 
 impl<
