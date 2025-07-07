@@ -2,7 +2,7 @@ use core::{
     cmp::{max, min}, convert::Infallible, f32::consts::PI, fmt::Write
 };
 
-use alloc::format;
+use alloc::{format};
 
 use embedded_graphics::{
     framebuffer::Framebuffer, geometry::{Angle, Point, Size}, mono_font::{ascii::{FONT_10X20, FONT_8X13}, MonoTextStyle, MonoTextStyleBuilder}, pixelcolor::{
@@ -37,7 +37,6 @@ pub struct Gauge<
     const CLEAR_RADIUS: usize,
     const MAX_VALUE: usize,
 > {
-    pub bounding_box: Rectangle,
     pub value: i32,
     pub indicated_value: i32,
     pub texts: [&'a str; 13],
@@ -47,6 +46,7 @@ pub struct Gauge<
 }
 
 #[allow(dead_code)]
+/// Static context for the dashboard, shouldn't change much after creation
 pub struct DashboardContext<'a, const GAUGE_WIDTH: usize, const GAUGE_HEIGHT: usize> {
     pub outer: [Point; 360],
     pub p_point: [Point; 360],
@@ -86,22 +86,17 @@ impl<
 {
     const CX: i32 = (W / 2) as i32;
     const CY: i32 = (H / 2) as i32;
-
+    // const MAX_VALUE_SCALED: u64 = (MAX_VALUE * 360 / 300).to_u64().unwrap(); // Is this possible in const?
     pub fn new_speedo(
-        location: Point,
         texts: [&'a str; 13],
-        line1: String<6>,
-        line2: String<6>,
     ) -> Self {
-        let size = Size::new(W as u32, H as u32);
         let max_value_scaled: u64 = (MAX_VALUE * 360 / 300).to_u64().unwrap(); // scale max value to the (300 deg) range of the gauge
         Gauge {
-            bounding_box: Rectangle::new(location, size),
             value: 0,
             indicated_value: 0,
             texts,
-            line1,
-            line2,
+            line1: String::new(),
+            line2: String::new(),
             scaled_max: max_value_scaled,
         }
     }
@@ -110,8 +105,16 @@ impl<
         self.line1 = value;
     }
 
+    pub fn get_line1(&'a mut self)->&'a mut String<6> {
+        &mut self.line1
+    }
+
     pub fn set_line2(&mut self, value: String<6>) {
         self.line2 = value;
+    }
+
+    pub fn get_line2(&'a mut self)->&'a mut String<6> {
+        &mut self.line2
     }
 
     pub fn set_value(&mut self, value: i32) {
@@ -126,9 +129,6 @@ impl<
             self.indicated_value = max(self.indicated_value - MAX_CHANGE, self.value);
         }
     }
-
-    // fn draw_grid<D: DrawTarget<Color = Rgb565>>(
-    // display: &mut D,
 
     pub fn draw_static<D: DrawTarget<Color = Rgb565, Error = Infallible>>(
         &self,
@@ -217,7 +217,7 @@ impl<
     }
 
     pub fn draw_dynamic<D: DrawTarget<Color = Rgb565, Error = Infallible>>(
-        &mut self,
+        &self,
         framebuffer: &mut D,
         context: &DashboardContext<W, H>,
     ) {
@@ -267,7 +267,8 @@ impl<
         .draw_styled(&context.outer_style, framebuffer)
         .unwrap();
 
-        write!(self.line1, "{}", self.value).unwrap();
+        // TODO disable line so I can remove mut
+        // write!(self.line1, "{}", self.value).unwrap();
         // self.set_line1(String::from(self.value));
         Text::with_alignment(
             &self.line1,

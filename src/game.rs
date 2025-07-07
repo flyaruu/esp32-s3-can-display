@@ -1,4 +1,4 @@
-use core::{cell::RefCell, str::FromStr};
+use core::cell::RefCell;
 
 use alloc::{boxed::Box, format, sync::Arc};
 use bevy_ecs::{resource::Resource, schedule::Schedule, system::{NonSendMut, Res, ResMut}, world::World};
@@ -7,6 +7,8 @@ use embedded_graphics::{mono_font::{ascii::{FONT_10X20, FONT_6X9}, MonoTextStyle
 use embedded_graphics_framebuf::{backends::FrameBufferBackend, FrameBuf};
 use embedded_hal_bus::spi::ExclusiveDevice;
 use esp_hal::{delay::Delay, gpio::Output, spi::master::SpiDmaBus, time::Instant, timer::systimer::SystemTimer, Blocking};
+use heapless::String;
+use log::info;
 use mipidsi::{interface::SpiInterface, models::GC9A01};
 
 use crate::{car_state::CarState, gauge::{DashboardContext, Gauge}};
@@ -131,11 +133,10 @@ fn draw_grid<D: DrawTarget<Color = Rgb565>>(
 struct AppStateResource {
     state: Arc<Mutex<CriticalSectionRawMutex,RefCell<CarState>>>,
     last_frame: Instant,
-    gauge: Gauge<'static,240,240,10,80,255>,
+    gauge: Gauge<'static,240,240,10,162,255>,
     gauge_context: DashboardContext<'static,240,240>,
 }
 
-// Because our display type contains DMA descriptors and raw pointers, it isn’t Sync.
 // We wrap it as a NonSend resource so that Bevy doesn’t require Sync.
 struct DisplayResource {
     display: GaugeDisplay,
@@ -152,20 +153,39 @@ fn render_system(
     let fps = 1000 / duration.as_millis();
 
     // Clear the framebuffer.
-    fb_res.frame_buf.clear(Rgb565::BLACK).unwrap();
+    // fb_res.frame_buf.clear(Rgb565::BLACK).unwrap();
     // Draw the game grid (using the age-based color) and generation number.
     // draw_grid(&mut fb_res.frame_buf, &game, fps).unwrap();
-    let mut gauge = &game.gauge;
+    let value = game.state.lock(|state| {
+        let state = state.borrow();
+        // Update the gauge value based on the car state.
+        state.message_count().try_into().unwrap_or(0)
+    }) % 100;
+    game.gauge.update_indicated();
+    // let mut line = game.gauge.get_sline1();
+    // write!(&mut line,"{}fps",fps);
+    game.gauge.set_value(value);
+    // info!("FPS: {}, Value: {}", fps, value);
+
     let dashboard_context = &game.gauge_context;
-    gauge.draw_static(&mut fb_res.frame_buf,&dashboard_context);
-    gauge.draw_dynamic(&mut fb_res.frame_buf,&dashboard_context);
+
+
+    game.gauge.draw_clear_mask(&mut fb_res.frame_buf, &dashboard_context);
+    // game.gauge.draw_static(&mut fb_res.frame_buf,&dashboard_context);
+    game.gauge.draw_dynamic(&mut fb_res.frame_buf,&dashboard_context);
     // Define the area covering the entire framebuffer.
     let area = Rectangle::new(Point::zero(), fb_res.frame_buf.size());
     // Flush the framebuffer to the physical display.
+    let after_draw = Instant::now();
+    let draw_duration = after_draw - now;
+    info!("Draw duration: {}ms", draw_duration.as_millis());
     display_res
         .display
         .fill_contiguous(&area, fb_res.frame_buf.data.iter().copied())
         .unwrap();
+    let draw_duration = Instant::now() - after_draw;
+    info!("Actual draw duration: {}ms", draw_duration.as_millis());
+
 }
 
 
@@ -174,12 +194,12 @@ pub(crate) fn setup_game(display: GaugeDisplay, car_state: Arc<Mutex<CriticalSec
     let game = AppStateResource {
         state: car_state,
         last_frame: Instant::now(),
-        gauge: crate::gauge::Gauge::new_speedo(Point { x: 120, y: 120 },["1","2","3","4","5","6","7","8","9","10","11","12","13"],heapless::String::from_str("xxxxxx").unwrap(),heapless::String::from_str("xxxxxx").unwrap()),
+        gauge: crate::gauge::Gauge::new_speedo(["1","2","3","4","5","6","7","8","9","10","11","12","13"]),
         gauge_context: DashboardContext::new()
     };
-    let instant = Instant::now();
-    let fb_res = FrameBufferResource::new();
+    let mut fb_res = FrameBufferResource::new();
 
+    game.gauge.draw_static(&mut fb_res.frame_buf, &game.gauge_context);
     let mut world = World::default();
     world.insert_resource(game);
     world.insert_non_send_resource(DisplayResource { display });

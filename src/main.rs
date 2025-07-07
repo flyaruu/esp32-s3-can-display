@@ -207,17 +207,17 @@ async fn voltage_calculator(mut pin: VoltageAdcPin, mut adc: VoltageAdc, car_sta
     let mut buffer: RingBuffer<f32,16> = RingBuffer::new();
     loop {
         if let Ok(value) = adc.read_oneshot(&mut pin) {
-            info!("Raw: {}", value);
+            // info!("Raw: {}", value);
             let converted = 3.3 / ((1<<12) * 3 * value) as f32;
-            info!("Converted: {}", converted);
-            info!("Length: {}",buffer.get_size());
+            // info!("Converted: {}", converted);
+            // info!("Length: {}",buffer.get_size());
             buffer.push(converted);
             let sum: f32 = buffer.iter().sum();
             car_state.lock(|state| {
                 state.borrow_mut().set_voltage(sum / buffer.len() as f32);
             });
         } else {
-            info!("Would block");
+            // info!("Would block");
         }
         Timer::after_millis(100).await
     }
