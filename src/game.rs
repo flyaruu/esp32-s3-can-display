@@ -64,10 +64,12 @@ pub(crate) type GaugeDisplay = mipidsi::Display<
 // --- LCD Resolution and FrameBuffer Type Aliases ---
 const LCD_H_RES: usize = 240;
 const LCD_V_RES: usize = 240;
-const LCD_BUFFER_SIZE: usize = LCD_H_RES * LCD_V_RES;
+const DYNAMIC_SCREEN: usize = 162;
+const DYNAMIC_SCREEN_BUFFER_SIZE: usize = DYNAMIC_SCREEN* DYNAMIC_SCREEN;
+const LCD_BUFFER_SIZE: usize = DYNAMIC_SCREEN*DYNAMIC_SCREEN;
 
 // We want our pixels stored as Rgb565.
-type FbBuffer = HeapBuffer<Rgb565, LCD_BUFFER_SIZE>;
+type FbBuffer = HeapBuffer<Rgb565, DYNAMIC_SCREEN_BUFFER_SIZE>;
 // Define a type alias for the complete FrameBuf.
 type MyFrameBuf = FrameBuf<Rgb565, FbBuffer>;
 
@@ -80,9 +82,9 @@ struct FrameBufferResource {
 impl FrameBufferResource {
     fn new() -> Self {
         // Allocate the framebuffer data on the heap.
-        let fb_data: Box<[Rgb565; LCD_BUFFER_SIZE]> = Box::new([Rgb565::BLACK; LCD_BUFFER_SIZE]);
+        let fb_data: Box<[Rgb565; DYNAMIC_SCREEN*DYNAMIC_SCREEN]> = Box::new([Rgb565::BLACK; DYNAMIC_SCREEN*DYNAMIC_SCREEN]);
         let heap_buffer = HeapBuffer::new(fb_data);
-        let frame_buf = MyFrameBuf::new(heap_buffer, LCD_H_RES, LCD_V_RES);
+        let frame_buf = MyFrameBuf::new(heap_buffer, DYNAMIC_SCREEN, DYNAMIC_SCREEN);
         Self { frame_buf }
     }
 }
@@ -169,6 +171,8 @@ fn render_system(
 
     let dashboard_context = &game.gauge_context;
 
+    let a= &mut display_res.display;
+
 
     game.gauge.draw_clear_mask(&mut fb_res.frame_buf, &dashboard_context);
     // game.gauge.draw_static(&mut fb_res.frame_buf,&dashboard_context);
@@ -176,12 +180,17 @@ fn render_system(
     // Define the area covering the entire framebuffer.
     let area = Rectangle::new(Point::zero(), fb_res.frame_buf.size());
     // Flush the framebuffer to the physical display.
+    info!("DDynamic bounding box: {:?}", game.gauge.dynamic_bounding_box());
     let after_draw = Instant::now();
     let draw_duration = after_draw - now;
     info!("Draw duration: {}ms", draw_duration.as_millis());
+    let bounding_box = game.gauge.dynamic_bounding_box();
+    let clipped = fb_res.frame_buf.clipped(&bounding_box);
+
+
     display_res
         .display
-        .fill_contiguous(&area, fb_res.frame_buf.data.iter().copied())
+        .fill_contiguous(&bounding_box, fb_res.frame_buf.data.iter().copied())
         .unwrap();
     let draw_duration = Instant::now() - after_draw;
     info!("Actual draw duration: {}ms", draw_duration.as_millis());

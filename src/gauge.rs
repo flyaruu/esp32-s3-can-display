@@ -1,5 +1,5 @@
 use core::{
-    cmp::{max, min}, convert::Infallible, f32::consts::PI, fmt::Write
+    cmp::{max, min}, convert::Infallible, error::Error, f32::consts::PI, fmt::Write
 };
 
 use alloc::{format};
@@ -101,6 +101,15 @@ impl<
         }
     }
 
+    pub fn dynamic_bounding_box(&self) -> Rectangle {
+        let d = CLEAR_RADIUS as i32 / 2;
+        info!("D: {}.  cx: {} cy: {}", d, Self::CX, Self::CY);
+        Rectangle::new(
+            Point::new(Self::CX - d, Self::CY - d),
+            Size::new(CLEAR_RADIUS as u32, CLEAR_RADIUS as u32),
+        )
+    }
+
     pub fn set_line1(&mut self, value: String<6>) {
         self.line1 = value;
     }
@@ -195,7 +204,7 @@ impl<
         }
     }
 
-    pub fn draw_clear_mask<D: DrawTarget<Color = Rgb565, Error = Infallible>>(
+    pub fn draw_clear_mask<E: Error, D: DrawTarget<Color = Rgb565, Error = E>>(
         &self,
         framebuffer: &mut D,
         context: &DashboardContext<W, H>,
