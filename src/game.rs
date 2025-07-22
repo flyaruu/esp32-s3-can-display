@@ -178,13 +178,13 @@ fn render_system(
     // Flush the framebuffer to the physical display.
     let after_draw = Instant::now();
     let draw_duration = after_draw - now;
-    info!("Draw duration: {}ms", draw_duration.as_millis());
+    // info!("Draw duration: {}ms", draw_duration.as_millis());
     display_res
         .display
         .fill_contiguous(&area, fb_res.frame_buf.data.iter().copied())
         .unwrap();
     let draw_duration = Instant::now() - after_draw;
-    info!("Actual draw duration: {}ms", draw_duration.as_millis());
+    // info!("Actual draw duration: {}ms", draw_duration.as_millis());
 
 }
 

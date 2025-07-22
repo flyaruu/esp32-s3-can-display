@@ -103,7 +103,7 @@ fn main() -> ! {
                     peripherals.TWAI0,
                     can_rx,
                     can_tx,
-                    BaudRate::B500K,
+                    BaudRate::B125K,
                     TwaiMode::Normal,
                 )
                 .into_async()
@@ -194,7 +194,11 @@ async fn car_state_maintainer(car_state: Arc<Mutex<CriticalSectionRawMutex, RefC
 async fn frame_received(mut twai: Twai<'static, Async>, sender: CanFrameSender<'static>) {
     loop {
         match twai.receive_async().await {
-            Ok(message) => sender.send(message).await,
+            Ok(message) =>{
+                use embedded_can::*;
+
+                info!("Received TWAI message with data: {:?}", message);
+                sender.send(message).await},
             Err(e) => {
                 warn!("Error reading message: {:?}", e);
             },

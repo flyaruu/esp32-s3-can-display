@@ -1,4 +1,5 @@
 use embedded_can::{Frame, Id::{Extended, Standard}};
+use log::info;
 
 #[derive(Debug,Default,Clone)]
 pub struct CarState {
@@ -13,7 +14,9 @@ impl CarState {
                 if standard_id.as_raw() == 0x7e0 {
                 }
             },
-            Extended(_extended_id) => todo!(),
+            Extended(extended) => {
+                info!("Extended frame found!");
+            },
         }
         self.message_count+=1
     }
