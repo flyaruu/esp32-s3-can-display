@@ -18,23 +18,17 @@ use alloc::sync::Arc;
 use circ_buffer::RingBuffer;
 use embassy_executor::task;
 use embassy_sync::blocking_mutex::Mutex;
-use embassy_sync::blocking_mutex::raw::{CriticalSectionRawMutex, NoopRawMutex};
+use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::{Channel, Receiver, Sender};
 use embassy_time::Timer;
-use embedded_graphics::{pixelcolor::Rgb565, prelude::*};
-use embedded_hal::delay::DelayNs;
-
-use embassy_embedded_hal::shared_bus::asynch::spi::SpiDevice as EmbassySpiDevice;
-use embedded_hal::digital::OutputPin;
-use embedded_hal::spi::SpiBus;
 use esp_hal::analog::adc::{Adc, AdcConfig, AdcPin, Attenuation};
 use esp_hal::dma::{DmaRxBuf, DmaTxBuf};
 use esp_hal::peripherals::{ADC1, GPIO1};
-use esp_hal::spi::master::SpiDmaBus;
 use esp_hal::system::{CpuControl, Stack};
 use esp_hal::timer::AnyTimer;
 use esp_hal::timer::systimer::SystemTimer;
 use esp_hal::timer::timg::TimerGroup;
+use esp_hal::twai::{BaudRate, TwaiConfiguration, TwaiMode};
 use esp_hal::twai::{EspTwaiFrame, Twai};
 use esp_hal::{Async, dma_buffers};
 use esp_hal::{
@@ -44,18 +38,14 @@ use esp_hal::{
     spi::master::Spi,
     time::Rate,
 };
-use esp_hal::{
-    twai::{BaudRate, TwaiConfiguration, TwaiMode},
-};
 use esp_hal_embassy::Executor;
 use esp_println::{logger::init_logger_from_env, println};
-use lcd_async::raw_framebuf::RawFrameBuf;
 use log::{info, warn};
 use static_cell::StaticCell;
 
 use crate::car_state::CarState;
 use crate::display::setup_display_task;
-use crate::game::{GaugeDisplay, setup_game};
+use crate::game::setup_game;
 
 static mut APP_CORE_STACK: Stack<8192> = Stack::new();
 const CHANNEL_SIZE: usize = 16;
@@ -72,15 +62,13 @@ fn panic(_info: &core::panic::PanicInfo) -> ! {
 type VoltageAdcPin = AdcPin<GPIO1<'static>, ADC1<'static>>;
 type VoltageAdc = Adc<'static, ADC1<'static>, Blocking>;
 
-type FrameBuffer = RawFrameBuf<Rgb565, &'static mut [u8]>;
-
 const FB_SIZE: usize = 240 * 240 * 2;
 
-static FB_STORAGE: StaticCell<[u8; 240*240*2]> = StaticCell::new();
+static FB_STORAGE: StaticCell<[u8; 240 * 240 * 2]> = StaticCell::new();
 
 pub static FRAMEBUFFER: Mutex<
     CriticalSectionRawMutex,
-    RefCell<Option<&'static mut [u8; FB_SIZE]>>
+    RefCell<Option<&'static mut [u8; FB_SIZE]>>,
 > = Mutex::new(RefCell::new(None));
 
 #[main]
@@ -179,11 +167,11 @@ fn main() -> ! {
     let mut backlight = Output::new(peripherals.GPIO2, Level::High, OutputConfig::default());
     backlight.set_high();
 
-    let (mut schedule,mut world) = setup_game(car_state.clone());
+    let (mut schedule, mut world) = setup_game(car_state.clone());
     loop {
-        let now = embassy_time::Instant::now();
+        // let now = embassy_time::Instant::now();
         schedule.run(&mut world);
-        let duration = now.elapsed();
+        // let duration = now.elapsed();
         // info!("Game loop duration: {}ms", duration.as_millis());
     }
 }
@@ -208,7 +196,7 @@ async fn frame_received(mut twai: Twai<'static, Async>, sender: CanFrameSender<'
             Ok(message) => {
                 info!("Received CAN message: {:?}", message);
                 sender.send(message).await
-            },
+            }
             Err(e) => {
                 warn!("Error reading message: {:?}", e);
             }

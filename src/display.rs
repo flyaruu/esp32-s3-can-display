@@ -1,14 +1,7 @@
 use crate::FRAMEBUFFER;
-use alloc::task;
 use embassy_embedded_hal::shared_bus::asynch::spi::SpiDevice as EmbassySpiDevice;
 use embassy_executor::task;
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
-use embassy_time::Timer;
-use embedded_graphics::{
-    pixelcolor::Rgb565,
-    prelude::*,
-    primitives::{Circle, PrimitiveStyle},
-};
 use embedded_hal::digital::OutputPin;
 use esp_hal::{Async, spi::master::SpiDmaBus};
 use lcd_async::{
@@ -16,18 +9,13 @@ use lcd_async::{
     interface::SpiInterface,
     models::GC9A01,
     options::{ColorInversion, ColorOrder, Orientation, Rotation},
-    raw_framebuf::RawFrameBuf,
 };
 use log::info;
-use static_cell::StaticCell;
 
 const WIDTH: usize = 240;
 const HEIGHT: usize = 240;
 // Rgb565 uses 2 bytes per pixel
 const FRAME_BUFFER_SIZE: usize = WIDTH * HEIGHT * 2;
-
-// Use StaticCell to create a static, zero-initialized buffer.
-// static FRAME_BUFFER: StaticCell<[u8; FRAME_BUFFER_SIZE]> = StaticCell::new();
 
 #[task]
 pub async fn setup_display_task(
@@ -63,13 +51,11 @@ async fn setup_display<RES: OutputPin, CS: OutputPin, DC: OutputPin>(
         .unwrap();
 
     {
-        // let mut fbuf = RawFrameBuf::<Rgb565, _>::new(frame_buffer.as_mut_slice(), WIDTH, HEIGHT);
-
         loop {
             let mut maybe_buf: Option<&'static mut [u8; FRAME_BUFFER_SIZE]> =
                 FRAMEBUFFER.lock(|fb| fb.borrow_mut().take());
             if let Some(buf) = maybe_buf.take() {
-                let now = embassy_time::Instant::now();
+                // let now = embassy_time::Instant::now();
                 display
                     .show_raw_data(0, 0, WIDTH as u16, HEIGHT as u16, buf)
                     .await
@@ -86,14 +72,6 @@ async fn setup_display<RES: OutputPin, CS: OutputPin, DC: OutputPin>(
             }
 
             embassy_time::Timer::after_millis(50).await;
-
-            // fbuf.clear(Rgb565::BLACK).unwrap();
-            // Circle::new(Point::new(120, 120), 80)
-            //     .into_styled(PrimitiveStyle::with_fill(Rgb565::GREEN))
-            //     .draw(&mut fbuf)
-            //     .unwrap();
-            // Timer::after_millis(10);
         }
-        // Draw anything from `embedded-graphics` into the in-memory buffer.
-    } // 
+    }
 }
