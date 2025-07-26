@@ -261,6 +261,7 @@ impl<
         // if self.indicated_value > 10000 {
         //     let gauge_angle2: usize = (self.indicated_value * 360).try_into().unwrap();
         // }
+        // info!("Drawing dial at angle: {}", gauge_angle3);
         Line::new(context.l_point[gauge_angle3], context.n_point[gauge_angle3])
             .draw_styled(&context.needle_style, framebuffer)
             .unwrap();
