@@ -13,6 +13,7 @@ mod game;
 mod gauge;
 // mod demo_can;
 mod car_state;
+mod fps;
 
 use alloc::sync::Arc;
 use circ_buffer::RingBuffer;
@@ -59,8 +60,20 @@ fn panic(_info: &core::panic::PanicInfo) -> ! {
     loop {}
 }
 
+static draw_complete_channel: DrawCompleteChannel = Channel::new();
+static flush_complete_channel: FlushCompleteChannel = Channel::new();
+
+#[derive(Debug)]
+pub struct DrawCompleteEvent;
+pub(crate) type DrawCompleteChannel = Channel<CriticalSectionRawMutex, DrawCompleteEvent, CHANNEL_SIZE>;
+
+#[derive(Debug)]
+pub struct FlushCompleteEvent;
+pub(crate) type FlushCompleteChannel = Channel<CriticalSectionRawMutex, FlushCompleteEvent, CHANNEL_SIZE>;
+
 type VoltageAdcPin = AdcPin<GPIO1<'static>, ADC1<'static>>;
 type VoltageAdc = Adc<'static, ADC1<'static>, Blocking>;
+
 
 const FB_SIZE: usize = 240 * 240 * 2;
 
@@ -158,7 +171,7 @@ fn main() -> ! {
                     voltage_adc,
                     car_state_async_side.clone(),
                 ));
-                spawner.must_spawn(setup_display_task(spi, reset, cs_output, lcd_dc));
+                spawner.must_spawn(setup_display_task(spi, reset, cs_output, lcd_dc, draw_complete_channel.receiver(), flush_complete_channel.sender()));
             });
         })
         .unwrap();
@@ -167,7 +180,9 @@ fn main() -> ! {
     let mut backlight = Output::new(peripherals.GPIO2, Level::High, OutputConfig::default());
     backlight.set_high();
 
-    let (mut schedule, mut world) = setup_game(car_state.clone());
+    let (mut schedule, mut world) = setup_game(car_state.clone(), draw_complete_channel.sender(), flush_complete_channel.receiver());
+    // send a 'bootstrap' event to the game loop
+    draw_complete_channel.try_send(DrawCompleteEvent).expect("Unexpected error sending DrawCompleteEvent");
     loop {
         // let now = embassy_time::Instant::now();
         schedule.run(&mut world);
