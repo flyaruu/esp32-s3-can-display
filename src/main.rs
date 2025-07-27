@@ -13,7 +13,7 @@ mod game;
 mod gauge;
 // mod demo_can;
 mod car_state;
-mod fps;
+mod ecs;
 
 use alloc::sync::Arc;
 use circ_buffer::RingBuffer;
@@ -27,7 +27,6 @@ use esp_hal::dma::{DmaRxBuf, DmaTxBuf};
 use esp_hal::peripherals::{ADC1, GPIO1};
 use esp_hal::system::{CpuControl, Stack};
 use esp_hal::timer::AnyTimer;
-use esp_hal::timer::systimer::SystemTimer;
 use esp_hal::timer::timg::TimerGroup;
 use esp_hal::twai::{BaudRate, TwaiConfiguration, TwaiMode};
 use esp_hal::twai::{EspTwaiFrame, Twai};
@@ -46,7 +45,7 @@ use static_cell::StaticCell;
 
 use crate::car_state::CarState;
 use crate::display::setup_display_task;
-use crate::game::setup_game;
+use crate::game::initialize_game;
 
 static mut APP_CORE_STACK: Stack<8192> = Stack::new();
 const CHANNEL_SIZE: usize = 16;
@@ -60,8 +59,8 @@ fn panic(_info: &core::panic::PanicInfo) -> ! {
     loop {}
 }
 
-static draw_complete_channel: DrawCompleteChannel = Channel::new();
-static flush_complete_channel: FlushCompleteChannel = Channel::new();
+static DRAW_COMPLETE_CHANNEL: DrawCompleteChannel = Channel::new();
+static FLUSH_COMPLETE_CHANNEL: FlushCompleteChannel = Channel::new();
 
 #[derive(Debug)]
 pub struct DrawCompleteEvent;
@@ -108,7 +107,7 @@ fn main() -> ! {
 
     let car_state = Arc::new(Mutex::new(RefCell::new(CarState::default())));
 
-    let systimer = SystemTimer::new(peripherals.SYSTIMER);
+    // let systimer = SystemTimer::new(peripherals.SYSTIMER);
 
     let can_rx = peripherals.GPIO33; // GREY -> yellow
     let can_tx = peripherals.GPIO21; // VIOLET -> white
@@ -171,7 +170,7 @@ fn main() -> ! {
                     voltage_adc,
                     car_state_async_side.clone(),
                 ));
-                spawner.must_spawn(setup_display_task(spi, reset, cs_output, lcd_dc, draw_complete_channel.receiver(), flush_complete_channel.sender()));
+                spawner.must_spawn(setup_display_task(spi, reset, cs_output, lcd_dc, DRAW_COMPLETE_CHANNEL.receiver(), FLUSH_COMPLETE_CHANNEL.sender()));
             });
         })
         .unwrap();
@@ -180,9 +179,9 @@ fn main() -> ! {
     let mut backlight = Output::new(peripherals.GPIO2, Level::High, OutputConfig::default());
     backlight.set_high();
 
-    let (mut schedule, mut world) = setup_game(car_state.clone(), draw_complete_channel.sender(), flush_complete_channel.receiver());
+    let (mut schedule, mut world) = initialize_game(car_state.clone(), DRAW_COMPLETE_CHANNEL.sender(), FLUSH_COMPLETE_CHANNEL.receiver());
     // send a 'bootstrap' event to the game loop
-    draw_complete_channel.try_send(DrawCompleteEvent).expect("Unexpected error sending DrawCompleteEvent");
+    DRAW_COMPLETE_CHANNEL.try_send(DrawCompleteEvent).expect("Unexpected error sending DrawCompleteEvent");
     loop {
         // let now = embassy_time::Instant::now();
         schedule.run(&mut world);

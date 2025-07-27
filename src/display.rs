@@ -42,7 +42,6 @@ async fn display_flush_loop<RES: OutputPin, CS: OutputPin, DC: OutputPin>(
 
     let spi_device = EmbassySpiDevice::new(&spi_mutex, cs);
     let lcd_interface = SpiInterface::new(spi_device, dc);
-    // let frame_buffer = FRAME_BUFFER.init([0; FRAME_BUFFER_SIZE]);
 
     let mut display = Builder::new(GC9A01, lcd_interface)
         .reset_pin(reset)
@@ -56,27 +55,21 @@ async fn display_flush_loop<RES: OutputPin, CS: OutputPin, DC: OutputPin>(
 
     {
         loop {
-            let now = embassy_time::Instant::now();
-            let completed_dsetup_display_taskraw = draw_complete_receiver.receive().await;
+            draw_complete_receiver.receive().await; // wait for signal
             let mut maybe_buf: Option<&'static mut [u8; FRAME_BUFFER_SIZE]> =
                 FRAMEBUFFER.lock(|fb| fb.borrow_mut().take());
             if let Some(buf) = maybe_buf.take() {
-                // info!("Framebuffer locked for flush: {}ms", now.elapsed().as_millis());
                 display
                     .show_raw_data(0, 0, WIDTH as u16, HEIGHT as u16, buf)
                     .await
                     .unwrap();
-                // info!("Flush completed: {}ms", now.elapsed().as_millis());
                 FRAMEBUFFER.lock(|fb| {
                     *fb.borrow_mut() = Some(buf); // reclaim the buffer
                 });
-                // info!("Flush unlocked: {}ms", now.elapsed().as_millis());
                 flush_complete_sender.send(FlushCompleteEvent).await;
-                // info!("Flush duration + sent: {}ms", now.elapsed().as_millis());
             } else {
                 info!("Framebuffer not initialized (display)");
             }
-
             embassy_time::Timer::after_millis(50).await;
         }
     }

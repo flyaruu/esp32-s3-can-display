@@ -1,6 +1,5 @@
 use bevy_ecs::{resource::Resource, system::ResMut};
 use embassy_time::Instant;
-use log::info;
 
 #[derive(Resource)]
 pub struct FPSResource {

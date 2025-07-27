@@ -3,14 +3,12 @@ use core::{
     convert::Infallible,
     error::Error,
     f32::consts::PI,
-    fmt::Write,
 };
 
 use alloc::format;
 
 use embedded_graphics::{
     Drawable,
-    framebuffer::Framebuffer,
     geometry::{Angle, Point, Size},
     mono_font::{
         MonoTextStyle, MonoTextStyleBuilder,
@@ -18,7 +16,7 @@ use embedded_graphics::{
     },
     pixelcolor::{
         Rgb565,
-        raw::{BigEndian, RawU16},
+        raw::RawU16,
     },
     prelude::{Dimensions, DrawTarget, RgbColor},
     primitives::{
@@ -28,7 +26,6 @@ use embedded_graphics::{
 };
 use heapless::String;
 use log::info;
-// use num_traits::ToPrimitive;
 use num_traits::Float;
 use num_traits::cast::ToPrimitive;
 
