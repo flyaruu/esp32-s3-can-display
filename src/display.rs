@@ -24,10 +24,10 @@ pub async fn setup_display_task(
     cs: esp_hal::gpio::Output<'static>,
     dc: esp_hal::gpio::Output<'static>,
 ) {
-    setup_display(spi_bus, reset, cs, dc).await
+    display_flush_loop(spi_bus, reset, cs, dc).await
 }
 
-async fn setup_display<RES: OutputPin, CS: OutputPin, DC: OutputPin>(
+async fn display_flush_loop<RES: OutputPin, CS: OutputPin, DC: OutputPin>(
     spi_bus: SpiDmaBus<'static, Async>,
     reset: RES,
     cs: CS,
@@ -55,15 +55,12 @@ async fn setup_display<RES: OutputPin, CS: OutputPin, DC: OutputPin>(
             let mut maybe_buf: Option<&'static mut [u8; FRAME_BUFFER_SIZE]> =
                 FRAMEBUFFER.lock(|fb| fb.borrow_mut().take());
             if let Some(buf) = maybe_buf.take() {
-                // let now = embassy_time::Instant::now();
+                let now = embassy_time::Instant::now();
                 display
                     .show_raw_data(0, 0, WIDTH as u16, HEIGHT as u16, buf)
                     .await
                     .unwrap();
-
-                // let after_draw = embassy_time::Instant::now();
-                // let draw_duration = after_draw - now;
-                // info!("Draw duration: {}ms", draw_duration.as_millis());
+                info!("Flush duration: {}ms", now.elapsed().as_millis());
                 FRAMEBUFFER.lock(|fb| {
                     *fb.borrow_mut() = Some(buf); // reclaim the buffer
                 });
