@@ -24,11 +24,9 @@ use lcd_async::raw_framebuf::RawFrameBuf;
 use log::info;
 
 use crate::{
-    car_state::CarState, ecs::{fps::{fps_system, FPSResource}, simulate::simulate_value, DrawSenderResource, FlushCompleteReceiverResource}, gauge::{DashboardContext, Gauge}, DrawCompleteEvent, FlushCompleteEvent, CHANNEL_SIZE, FRAMEBUFFER
+    car_state::CarState, ecs::{fps::{fps_system, FPSResource}, simulate::simulate_value, DashboardContextResource, DrawSenderResource, FlushCompleteReceiverResource}, gauge::{DashboardContext, Gauge}, DrawCompleteEvent, FlushCompleteEvent, CHANNEL_SIZE, FRAMEBUFFER, LCD_H_RES, LCD_V_RES
 };
 
-const LCD_H_RES: usize = 240;
-const LCD_V_RES: usize = 240;
 
 
 /// Draws the game grid using the cell age for color.
@@ -74,11 +72,10 @@ fn draw_grid<D: DrawTarget<Color = Rgb565>>(
 #[derive(Resource)]
 pub(crate) struct AppStateResource {
     state: Arc<Mutex<CriticalSectionRawMutex, RefCell<CarState>>>,
-    pub(crate) gauge: Gauge<'static, 240, 240, 10, 162, 255>,
-    gauge_context: DashboardContext<'static, 240, 240>,
+    pub(crate) gauge: Gauge<'static, LCD_H_RES, LCD_V_RES, 10, 162, 255>,
 }
 
-fn render_system(mut game: ResMut<AppStateResource>, sender: ResMut<DrawSenderResource>, receiver: ResMut<FlushCompleteReceiverResource>, fps: Res<FPSResource>) {
+fn render_system(mut game: ResMut<AppStateResource>, sender: ResMut<DrawSenderResource>, receiver: ResMut<FlushCompleteReceiverResource>, fps: Res<FPSResource>, dashboard_context: Res<DashboardContextResource<LCD_H_RES, LCD_V_RES>>) {
     loop { // TODO hot loop
         match receiver.receiver.try_receive() {
             Ok(_) => break,
@@ -96,8 +93,8 @@ fn render_system(mut game: ResMut<AppStateResource>, sender: ResMut<DrawSenderRe
         // Create a new frame buffer with the static buffer.
         let mut raw_fb = RawFrameBuf::<Rgb565, _>::new(&mut buf[..], LCD_H_RES, LCD_V_RES);
         game.gauge.update_indicated(); // move the needle towards the value, should be a separate system
-        game.gauge.draw_clear_mask(&mut raw_fb, &game.gauge_context);
-        game.gauge.draw_dynamic(&mut raw_fb, &game.gauge_context);
+        game.gauge.draw_clear_mask(&mut raw_fb, &dashboard_context.context);
+        game.gauge.draw_dynamic(&mut raw_fb, &dashboard_context.context);
         draw_grid(&mut raw_fb, &game, fps.fps).unwrap();
 
         // unlock the framebuffer
@@ -125,9 +122,9 @@ pub(crate) fn initialize_game(
         gauge: crate::gauge::Gauge::new_speedo([
             "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13",
         ]),
-        gauge_context: DashboardContext::new(),
     };
     loop {
+        let gauge_context = DashboardContext::new();
         let buf = FRAMEBUFFER.lock(|fb| {
             let mut fb = fb.borrow_mut();
             fb.take()
@@ -135,7 +132,7 @@ pub(crate) fn initialize_game(
         if let Some(fb_res) = buf {
             // Initialize the framebuffer with the static buffer.
             let mut draw = RawFrameBuf::new(fb_res.as_mut_slice(), LCD_H_RES, LCD_V_RES);
-            game.gauge.draw_static(&mut draw, &game.gauge_context);
+            game.gauge.draw_static(&mut draw, &gauge_context);
             FRAMEBUFFER.lock(|fb| {
                 *fb.borrow_mut() = Some(fb_res); // reclaim the buffer
             });
@@ -145,7 +142,7 @@ pub(crate) fn initialize_game(
             world.insert_resource(DrawSenderResource::new(draw_complete_sender));
             world.insert_resource(FlushCompleteReceiverResource::new(flush_complete_receiver));
             world.insert_resource(FPSResource::new());
-            // world.insert_non_send_resource(DisplayResource { display });
+            world.insert_resource(DashboardContextResource::<LCD_H_RES, LCD_V_RES>::new(gauge_context));
 
             let mut schedule = Schedule::default();
             schedule.add_systems(render_system);
@@ -153,7 +150,7 @@ pub(crate) fn initialize_game(
             schedule.add_systems(fps_system);
             break (schedule, world);
         } else {
-            info!("Framebuffer not initialized (game)");
+            info!("Framebuffer not initialized (game), should not happen");
         }
     }
 }

@@ -1,7 +1,7 @@
 use bevy_ecs::resource::Resource;
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::Sender};
 
-use crate::{DrawCompleteEvent, FlushCompleteEvent, CHANNEL_SIZE};
+use crate::{gauge::DashboardContext, DrawCompleteEvent, FlushCompleteEvent, CHANNEL_SIZE};
 
 pub mod fps;
 pub mod simulate;
@@ -30,4 +30,14 @@ impl FlushCompleteReceiverResource {
     }
 }
 
+#[derive(Resource)]
+pub struct DashboardContextResource<const W: usize, const H: usize> {
+    pub context: DashboardContext<'static, W, H>,
+}
 
+impl <const W: usize, const H: usize> DashboardContextResource<W, H> {
+    pub fn new(context: DashboardContext<'static, W, H>) -> Self {
+        Self { context }
+    }
+    
+}

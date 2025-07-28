@@ -74,13 +74,16 @@ type VoltageAdcPin = AdcPin<GPIO1<'static>, ADC1<'static>>;
 type VoltageAdc = Adc<'static, ADC1<'static>, Blocking>;
 
 
-const FB_SIZE: usize = 240 * 240 * 2;
+pub const FRAME_BUFFER_SIZE: usize = LCD_H_RES * LCD_V_RES * 2;
+pub const LCD_H_RES: usize = 240;
+pub const LCD_V_RES: usize = 240;
 
-static FB_STORAGE: StaticCell<[u8; 240 * 240 * 2]> = StaticCell::new();
+
+static FB_STORAGE: StaticCell<[u8; FRAME_BUFFER_SIZE]> = StaticCell::new();
 
 pub static FRAMEBUFFER: Mutex<
     CriticalSectionRawMutex,
-    RefCell<Option<&'static mut [u8; FB_SIZE]>>,
+    RefCell<Option<&'static mut [u8; FRAME_BUFFER_SIZE]>>,
 > = Mutex::new(RefCell::new(None));
 
 #[main]
@@ -90,14 +93,14 @@ fn main() -> ! {
     esp_alloc::heap_allocator!(size: 100000);
     init_logger_from_env();
     info!("Starting ESP32-S3 CAN Display");
-    let buf = FB_STORAGE.init_with(|| [0u8; FB_SIZE]);
+    let buf = FB_STORAGE.init_with(|| [0u8; FRAME_BUFFER_SIZE]);
     // let buf: &'static mut [u8; FB_SIZE] = FB_STORAGE.init([0u8; FB_SIZE]);
     critical_section::with(|cs| {
         // inside here you have the CriticalSection token `cs`
         *FRAMEBUFFER.borrow(cs).borrow_mut() = Some(buf);
     });
 
-    info!("Framebuffer initialized with size: {}", FB_SIZE);
+    info!("Framebuffer initialized with size: {}", FRAME_BUFFER_SIZE);
     // Store it in the Mutex-protected RefCell as `Some`
 
     let can_frame_channel: CanFrameChannel = Channel::new();
@@ -183,10 +186,7 @@ fn main() -> ! {
     // send a 'bootstrap' event to the game loop
     DRAW_COMPLETE_CHANNEL.try_send(DrawCompleteEvent).expect("Unexpected error sending DrawCompleteEvent");
     loop {
-        // let now = embassy_time::Instant::now();
         schedule.run(&mut world);
-        // let duration = now.elapsed();
-        // info!("Game loop duration: {}ms", duration.as_millis());
     }
 }
 

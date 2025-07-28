@@ -1,4 +1,4 @@
-use crate::{DrawCompleteEvent, FlushCompleteEvent, CHANNEL_SIZE, FRAMEBUFFER};
+use crate::{DrawCompleteEvent, FlushCompleteEvent, CHANNEL_SIZE, FRAMEBUFFER, FRAME_BUFFER_SIZE, LCD_H_RES, LCD_V_RES};
 use embassy_embedded_hal::shared_bus::asynch::spi::SpiDevice as EmbassySpiDevice;
 use embassy_executor::task;
 use embassy_sync::blocking_mutex::raw::{CriticalSectionRawMutex, NoopRawMutex};
@@ -12,10 +12,7 @@ use lcd_async::{
 };
 use log::info;
 
-const WIDTH: usize = 240;
-const HEIGHT: usize = 240;
 // Rgb565 uses 2 bytes per pixel
-const FRAME_BUFFER_SIZE: usize = WIDTH * HEIGHT * 2;
 
 #[task]
 pub async fn setup_display_task(
@@ -45,7 +42,7 @@ async fn display_flush_loop<RES: OutputPin, CS: OutputPin, DC: OutputPin>(
 
     let mut display = Builder::new(GC9A01, lcd_interface)
         .reset_pin(reset)
-        .display_size(240, 240)
+        .display_size(LCD_H_RES as u16, LCD_V_RES as u16)
         .orientation(Orientation::new().rotate(Rotation::Deg90))
         .color_order(ColorOrder::Bgr)
         .invert_colors(ColorInversion::Inverted)
@@ -60,7 +57,7 @@ async fn display_flush_loop<RES: OutputPin, CS: OutputPin, DC: OutputPin>(
                 FRAMEBUFFER.lock(|fb| fb.borrow_mut().take());
             if let Some(buf) = maybe_buf.take() {
                 display
-                    .show_raw_data(0, 0, WIDTH as u16, HEIGHT as u16, buf)
+                    .show_raw_data(0, 0, LCD_H_RES as u16, LCD_V_RES as u16, buf)
                     .await
                     .unwrap();
                 FRAMEBUFFER.lock(|fb| {
