@@ -64,20 +64,20 @@ static FLUSH_COMPLETE_CHANNEL: FlushCompleteChannel = Channel::new();
 
 #[derive(Debug)]
 pub struct DrawCompleteEvent;
-pub(crate) type DrawCompleteChannel = Channel<CriticalSectionRawMutex, DrawCompleteEvent, CHANNEL_SIZE>;
+pub(crate) type DrawCompleteChannel =
+    Channel<CriticalSectionRawMutex, DrawCompleteEvent, CHANNEL_SIZE>;
 
 #[derive(Debug)]
 pub struct FlushCompleteEvent;
-pub(crate) type FlushCompleteChannel = Channel<CriticalSectionRawMutex, FlushCompleteEvent, CHANNEL_SIZE>;
+pub(crate) type FlushCompleteChannel =
+    Channel<CriticalSectionRawMutex, FlushCompleteEvent, CHANNEL_SIZE>;
 
 type VoltageAdcPin = AdcPin<GPIO1<'static>, ADC1<'static>>;
 type VoltageAdc = Adc<'static, ADC1<'static>, Blocking>;
 
-
 pub const FRAME_BUFFER_SIZE: usize = LCD_H_RES * LCD_V_RES * 2;
 pub const LCD_H_RES: usize = 240;
 pub const LCD_V_RES: usize = 240;
-
 
 static FB_STORAGE: StaticCell<[u8; FRAME_BUFFER_SIZE]> = StaticCell::new();
 
@@ -173,7 +173,14 @@ fn main() -> ! {
                     voltage_adc,
                     car_state_async_side.clone(),
                 ));
-                spawner.must_spawn(setup_display_task(spi, reset, cs_output, lcd_dc, DRAW_COMPLETE_CHANNEL.receiver(), FLUSH_COMPLETE_CHANNEL.sender()));
+                spawner.must_spawn(setup_display_task(
+                    spi,
+                    reset,
+                    cs_output,
+                    lcd_dc,
+                    DRAW_COMPLETE_CHANNEL.receiver(),
+                    FLUSH_COMPLETE_CHANNEL.sender(),
+                ));
             });
         })
         .unwrap();
@@ -182,11 +189,19 @@ fn main() -> ! {
     let mut backlight = Output::new(peripherals.GPIO2, Level::High, OutputConfig::default());
     backlight.set_high();
 
-    let (mut schedule, mut world) = initialize_game(car_state.clone(), DRAW_COMPLETE_CHANNEL.sender(), FLUSH_COMPLETE_CHANNEL.receiver());
+    let mut app = initialize_game(
+        car_state.clone(),
+        DRAW_COMPLETE_CHANNEL.sender(),
+        FLUSH_COMPLETE_CHANNEL.receiver(),
+    );
     // send a 'bootstrap' event to the game loop
-    DRAW_COMPLETE_CHANNEL.try_send(DrawCompleteEvent).expect("Unexpected error sending DrawCompleteEvent");
+
+    DRAW_COMPLETE_CHANNEL
+        .try_send(DrawCompleteEvent)
+        .expect("Unexpected error sending DrawCompleteEvent");
     loop {
-        schedule.run(&mut world);
+        // info!("Running app...");
+        app.update();
     }
 }
 

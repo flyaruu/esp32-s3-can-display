@@ -9,7 +9,10 @@ pub struct FPSResource {
 
 impl FPSResource {
     pub fn new() -> Self {
-        Self { fps: 0, instant: Instant::now() }
+        Self {
+            fps: 0,
+            instant: Instant::now(),
+        }
     }
 
     pub fn process(&mut self, now: Instant) {
@@ -20,8 +23,6 @@ impl FPSResource {
     }
 }
 
-pub(crate) fn fps_system(
-    mut fps_resource: ResMut<FPSResource>,
-) {
+pub(crate) fn fps_system(mut fps_resource: ResMut<FPSResource>) {
     fps_resource.process(Instant::now());
 }

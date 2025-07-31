@@ -14,10 +14,7 @@ use embedded_graphics::{
         MonoTextStyle, MonoTextStyleBuilder,
         ascii::{FONT_8X13, FONT_10X20},
     },
-    pixelcolor::{
-        Rgb565,
-        raw::RawU16,
-    },
+    pixelcolor::{Rgb565, raw::RawU16},
     prelude::{Dimensions, DrawTarget, RgbColor},
     primitives::{
         Arc, Circle, Line, PrimitiveStyle, PrimitiveStyleBuilder, Rectangle, StyledDrawable,

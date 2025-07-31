@@ -1,4 +1,7 @@
-use crate::{DrawCompleteEvent, FlushCompleteEvent, CHANNEL_SIZE, FRAMEBUFFER, FRAME_BUFFER_SIZE, LCD_H_RES, LCD_V_RES};
+use crate::{
+    CHANNEL_SIZE, DrawCompleteEvent, FRAME_BUFFER_SIZE, FRAMEBUFFER, FlushCompleteEvent, LCD_H_RES,
+    LCD_V_RES,
+};
 use embassy_embedded_hal::shared_bus::asynch::spi::SpiDevice as EmbassySpiDevice;
 use embassy_executor::task;
 use embassy_sync::blocking_mutex::raw::{CriticalSectionRawMutex, NoopRawMutex};
@@ -20,10 +23,28 @@ pub async fn setup_display_task(
     reset: esp_hal::gpio::Output<'static>,
     cs: esp_hal::gpio::Output<'static>,
     dc: esp_hal::gpio::Output<'static>,
-    draw_complete_receiver: embassy_sync::channel::Receiver<'static, CriticalSectionRawMutex, DrawCompleteEvent, CHANNEL_SIZE>,
-    flush_complete_sender: embassy_sync::channel::Sender<'static, CriticalSectionRawMutex, FlushCompleteEvent, CHANNEL_SIZE>,
+    draw_complete_receiver: embassy_sync::channel::Receiver<
+        'static,
+        CriticalSectionRawMutex,
+        DrawCompleteEvent,
+        CHANNEL_SIZE,
+    >,
+    flush_complete_sender: embassy_sync::channel::Sender<
+        'static,
+        CriticalSectionRawMutex,
+        FlushCompleteEvent,
+        CHANNEL_SIZE,
+    >,
 ) {
-    display_flush_loop(spi_bus, reset, cs, dc, draw_complete_receiver, flush_complete_sender).await
+    display_flush_loop(
+        spi_bus,
+        reset,
+        cs,
+        dc,
+        draw_complete_receiver,
+        flush_complete_sender,
+    )
+    .await
 }
 
 async fn display_flush_loop<RES: OutputPin, CS: OutputPin, DC: OutputPin>(
@@ -31,8 +52,18 @@ async fn display_flush_loop<RES: OutputPin, CS: OutputPin, DC: OutputPin>(
     reset: RES,
     cs: CS,
     dc: DC,
-    draw_complete_receiver: embassy_sync::channel::Receiver<'static, CriticalSectionRawMutex, DrawCompleteEvent, CHANNEL_SIZE>,
-    flush_complete_sender: embassy_sync::channel::Sender<'static, CriticalSectionRawMutex, FlushCompleteEvent, CHANNEL_SIZE>,
+    draw_complete_receiver: embassy_sync::channel::Receiver<
+        'static,
+        CriticalSectionRawMutex,
+        DrawCompleteEvent,
+        CHANNEL_SIZE,
+    >,
+    flush_complete_sender: embassy_sync::channel::Sender<
+        'static,
+        CriticalSectionRawMutex,
+        FlushCompleteEvent,
+        CHANNEL_SIZE,
+    >,
 ) {
     let spi_mutex: embassy_sync::mutex::Mutex<NoopRawMutex, _> =
         embassy_sync::mutex::Mutex::new(spi_bus);
