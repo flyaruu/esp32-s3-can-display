@@ -248,7 +248,7 @@ impl<
                 // TODO time this, could store these:
                 let text: &str = self.texts[i >> 1];
                 Text::with_alignment(
-                    &text,
+                    text,
                     context.l_point[i * 12],
                     current_text_style,
                     embedded_graphics::text::Alignment::Center,
@@ -416,7 +416,7 @@ impl<'a, const GAUGE_WIDTH: usize, const GAUGE_HEIGHT: usize>
         for i in 0..360 {
             let a = ((i + 120) % 360) as i32;
             let angle_rad = a.to_f32().unwrap() * PI / 180.0;
-            info!("i: {} a: {} a_rad: {}", i, a, angle_rad);
+            info!("i: {i} a: {a} a_rad: {angle_rad}");
             context.outer[i] = Point {
                 x: ((r - OUTER_OFFSET) * angle_rad.cos()).to_i32().unwrap() + cx,
                 y: ((r - OUTER_OFFSET) * angle_rad.sin()).to_i32().unwrap() + cy,

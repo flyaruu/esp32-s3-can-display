@@ -4,9 +4,8 @@ use alloc::{format, sync::Arc};
 use bevy_app::{App, Update};
 use bevy_ecs::{
     resource::Resource,
-    schedule::{Schedule, ScheduleLabel},
+    schedule::ScheduleLabel,
     system::{Res, ResMut},
-    world::World,
 };
 use embassy_sync::{
     blocking_mutex::{Mutex, raw::CriticalSectionRawMutex},
@@ -62,7 +61,7 @@ fn draw_grid<D: DrawTarget<Color = Rgb565>>(
     .draw(display)?;
 
     Text::new(
-        format!("fps: {}", fps).as_str(),
+        format!("fps: {fps}").as_str(),
         Point::new(65, 170),
         MonoTextStyle::new(&FONT_10X20, Rgb565::WHITE),
     )

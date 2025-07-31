@@ -100,7 +100,7 @@ fn main() -> ! {
         *FRAMEBUFFER.borrow(cs).borrow_mut() = Some(buf);
     });
 
-    info!("Framebuffer initialized with size: {}", FRAME_BUFFER_SIZE);
+    info!("Framebuffer initialized with size: {FRAME_BUFFER_SIZE}");
     // Store it in the Mutex-protected RefCell as `Some`
 
     let can_frame_channel: CanFrameChannel = Channel::new();
@@ -223,11 +223,11 @@ async fn frame_received(mut twai: Twai<'static, Async>, sender: CanFrameSender<'
     loop {
         match twai.receive_async().await {
             Ok(message) => {
-                info!("Received CAN message: {:?}", message);
+                info!("Received CAN message: {message:?}");
                 sender.send(message).await
             }
             Err(e) => {
-                warn!("Error reading message: {:?}", e);
+                warn!("Error reading message: {e:?}");
             }
         }
     }
