@@ -1,10 +1,9 @@
 use bevy_ecs::resource::Resource;
 
-use crate::{gauge::DashboardContext};
+use crate::gauge::DashboardContext;
 
 pub mod fps;
 pub mod simulate;
-
 
 #[derive(Resource)]
 pub struct DashboardContextResource<const W: usize, const H: usize> {

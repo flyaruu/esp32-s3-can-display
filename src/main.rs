@@ -65,7 +65,7 @@ pub enum DrawBufferStatus {
     Flushing,
     Drawing,
     #[default]
-    Idle
+    Idle,
 }
 
 type DrawBufferSignal = Signal<CriticalSectionRawMutex, DrawBufferStatus>;
@@ -172,12 +172,7 @@ fn main() -> ! {
                     voltage_adc,
                     car_state_async_side.clone(),
                 ));
-                spawner.must_spawn(setup_display_task(
-                    spi,
-                    reset,
-                    cs_output,
-                    lcd_dc,
-                ));
+                spawner.must_spawn(setup_display_task(spi, reset, cs_output, lcd_dc));
             });
         })
         .unwrap();
@@ -186,13 +181,10 @@ fn main() -> ! {
     let mut backlight = Output::new(peripherals.GPIO2, Level::High, OutputConfig::default());
     backlight.set_high();
 
-    let mut app = initialize_game(
-        car_state.clone(),
-    );
+    let mut app = initialize_game(car_state.clone());
     // send a 'bootstrap' event to the game loop
 
-    DRAW_BUFFER_SIGNAL
-        .signal(DrawBufferStatus::Flushing);
+    DRAW_BUFFER_SIGNAL.signal(DrawBufferStatus::Flushing);
     info!("Sent bootstrap signal to game loop");
     loop {
         // info!("Running app...");

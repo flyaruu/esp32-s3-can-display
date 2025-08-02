@@ -7,17 +7,20 @@ use bevy_ecs::{
     system::{Res, ResMut},
 };
 use embassy_sync::blocking_mutex::{Mutex, raw::CriticalSectionRawMutex};
-use embedded_graphics::{
-    pixelcolor::Rgb565,
-};
+use embedded_graphics::pixelcolor::Rgb565;
 use lcd_async::raw_framebuf::RawFrameBuf;
 
 use log::info;
 
 use crate::{
-    car_state::CarState, ecs::{
-        fps::{fps_system, FPSResource}, simulate::simulate_value, DashboardContextResource
-    }, gauge::{DashboardContext, Gauge}, DrawBufferStatus, FRAMEBUFFER, LCD_H_RES, LCD_V_RES
+    DrawBufferStatus, FRAMEBUFFER, LCD_H_RES, LCD_V_RES,
+    car_state::CarState,
+    ecs::{
+        DashboardContextResource,
+        fps::{FPSResource, fps_system},
+        simulate::simulate_value,
+    },
+    gauge::{DashboardContext, Gauge},
 };
 #[derive(Resource)]
 pub(crate) struct AppStateResource {
@@ -102,14 +105,10 @@ pub(crate) fn initialize_game(
 
 pub fn wait_for_drawing() {
     loop {
-        match crate::DRAW_BUFFER_SIGNAL.try_take(){
-            Some(DrawBufferStatus::Drawing) => {
-                break
-            }
-            Some(_status) => {
-            }
-            None => {
-            }
+        match crate::DRAW_BUFFER_SIGNAL.try_take() {
+            Some(DrawBufferStatus::Drawing) => break,
+            Some(_status) => {}
+            None => {}
         }
     }
 }

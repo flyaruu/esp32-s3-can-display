@@ -1,6 +1,4 @@
-use crate::{
-    DrawBufferStatus, FRAMEBUFFER, FRAME_BUFFER_SIZE, LCD_H_RES, LCD_V_RES
-};
+use crate::{DrawBufferStatus, FRAME_BUFFER_SIZE, FRAMEBUFFER, LCD_H_RES, LCD_V_RES};
 use embassy_embedded_hal::shared_bus::asynch::spi::SpiDevice as EmbassySpiDevice;
 use embassy_executor::task;
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
@@ -23,13 +21,7 @@ pub async fn setup_display_task(
     cs: esp_hal::gpio::Output<'static>,
     dc: esp_hal::gpio::Output<'static>,
 ) {
-    display_flush_loop(
-        spi_bus,
-        reset,
-        cs,
-        dc,
-    )
-    .await
+    display_flush_loop(spi_bus, reset, cs, dc).await
 }
 
 async fn display_flush_loop<RES: OutputPin, CS: OutputPin, DC: OutputPin>(
