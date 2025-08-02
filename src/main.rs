@@ -21,6 +21,7 @@ use embassy_executor::task;
 use embassy_sync::blocking_mutex::Mutex;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::{Channel, Receiver, Sender};
+use embassy_sync::signal::Signal;
 use embassy_time::Timer;
 use esp_hal::analog::adc::{Adc, AdcConfig, AdcPin, Attenuation};
 use esp_hal::dma::{DmaRxBuf, DmaTxBuf};
@@ -59,18 +60,17 @@ fn panic(_info: &core::panic::PanicInfo) -> ! {
     loop {}
 }
 
-static DRAW_COMPLETE_CHANNEL: DrawCompleteChannel = Channel::new();
-static FLUSH_COMPLETE_CHANNEL: FlushCompleteChannel = Channel::new();
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum DrawBufferStatus {
+    Flushing,
+    Drawing,
+    #[default]
+    Idle
+}
 
-#[derive(Debug)]
-pub struct DrawCompleteEvent;
-pub(crate) type DrawCompleteChannel =
-    Channel<CriticalSectionRawMutex, DrawCompleteEvent, CHANNEL_SIZE>;
+type DrawBufferSignal = Signal<CriticalSectionRawMutex, DrawBufferStatus>;
 
-#[derive(Debug)]
-pub struct FlushCompleteEvent;
-pub(crate) type FlushCompleteChannel =
-    Channel<CriticalSectionRawMutex, FlushCompleteEvent, CHANNEL_SIZE>;
+pub static DRAW_BUFFER_SIGNAL: DrawBufferSignal = Signal::new();
 
 type VoltageAdcPin = AdcPin<GPIO1<'static>, ADC1<'static>>;
 type VoltageAdc = Adc<'static, ADC1<'static>, Blocking>;
@@ -164,7 +164,6 @@ fn main() -> ! {
 
             let lcd_dc = Output::new(peripherals.GPIO8, Level::Low, OutputConfig::default());
             let cs_output = Output::new(peripherals.GPIO9, Level::High, OutputConfig::default());
-
             executor.run(|spawner| {
                 spawner.must_spawn(frame_received(can, sender));
                 spawner.must_spawn(car_state_maintainer(car_state_async_side.clone(), receiver));
@@ -178,8 +177,6 @@ fn main() -> ! {
                     reset,
                     cs_output,
                     lcd_dc,
-                    DRAW_COMPLETE_CHANNEL.receiver(),
-                    FLUSH_COMPLETE_CHANNEL.sender(),
                 ));
             });
         })
@@ -191,14 +188,12 @@ fn main() -> ! {
 
     let mut app = initialize_game(
         car_state.clone(),
-        DRAW_COMPLETE_CHANNEL.sender(),
-        FLUSH_COMPLETE_CHANNEL.receiver(),
     );
     // send a 'bootstrap' event to the game loop
 
-    DRAW_COMPLETE_CHANNEL
-        .try_send(DrawCompleteEvent)
-        .expect("Unexpected error sending DrawCompleteEvent");
+    DRAW_BUFFER_SIGNAL
+        .signal(DrawBufferStatus::Flushing);
+    info!("Sent bootstrap signal to game loop");
     loop {
         // info!("Running app...");
         app.update();

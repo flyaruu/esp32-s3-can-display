@@ -5,11 +5,11 @@ use core::{
     f32::consts::PI,
 };
 
-use alloc::format;
+use alloc::{format, string::String};
 
 use embedded_graphics::{
     Drawable,
-    geometry::{Angle, Point, Size},
+    geometry::{Angle, Point},
     mono_font::{
         MonoTextStyle, MonoTextStyleBuilder,
         ascii::{FONT_8X13, FONT_10X20},
@@ -21,7 +21,6 @@ use embedded_graphics::{
     },
     text::Text,
 };
-use heapless::String;
 use log::info;
 use num_traits::Float;
 use num_traits::cast::ToPrimitive;
@@ -49,8 +48,8 @@ pub struct Gauge<
     pub value: i32,
     pub indicated_value: i32,
     pub texts: [&'a str; 13],
-    line1: String<6>,
-    line2: String<6>,
+    line1: String,
+    line2: String,
     scaled_max: u64,
 }
 
@@ -108,28 +107,19 @@ impl<
         }
     }
 
-    pub fn dynamic_bounding_box(&self) -> Rectangle {
-        let d = CLEAR_RADIUS as i32 / 2;
-        info!("D: {}.  cx: {} cy: {}", d, Self::CX, Self::CY);
-        Rectangle::new(
-            Point::new(Self::CX - d, Self::CY - d),
-            Size::new(CLEAR_RADIUS as u32, CLEAR_RADIUS as u32),
-        )
-    }
-
-    pub fn set_line1(&mut self, value: String<6>) {
+    pub fn set_line1(&mut self, value: String) {
         self.line1 = value;
     }
 
-    pub fn get_line1(&'a mut self) -> &'a mut String<6> {
+    pub fn get_line1(&'a mut self) -> &'a mut String {
         &mut self.line1
     }
 
-    pub fn set_line2(&mut self, value: String<6>) {
+    pub fn set_line2(&mut self, value: String) {
         self.line2 = value;
     }
 
-    pub fn get_line2(&'a mut self) -> &'a mut String<6> {
+    pub fn get_line2(&'a mut self) -> &'a mut String {
         &mut self.line2
     }
 
