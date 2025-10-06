@@ -1,6 +1,6 @@
 use core::cell::RefCell;
 
-use alloc::{string::ToString, sync::Arc};
+use alloc::{borrow, string::ToString, sync::Arc};
 use bevy_app::{App, Update};
 use bevy_ecs::{
     resource::Resource,
@@ -41,6 +41,10 @@ fn render_system(
         fb.take()
     });
     if let Some(buf) = buf {
+        let (rpm, engine_load, throttle_position, _message_count) = game.state.lock(|state| {
+            let borrow = state.borrow();
+            (borrow.rpm(), borrow.engine_load(), borrow.throttle_position(), borrow.message_count())
+        });
         // Create a new frame buffer with the static buffer.
         let mut raw_fb = RawFrameBuf::<Rgb565, _>::new(&mut buf[..], LCD_H_RES, LCD_V_RES);
         game.gauge.update_indicated(); // move the needle towards the value, should be a separate system
@@ -49,9 +53,9 @@ fn render_system(
         game.gauge
             .draw_dynamic(&mut raw_fb, &dashboard_context.context);
         // draw_grid(&mut raw_fb, &game, fps.fps).unwrap();
-        game.gauge.set_line1("blabla".to_string());
-        game.gauge.set_line2("123456".to_string());
-
+        game.gauge.set_line1(throttle_position.to_string());
+        game.gauge.set_line2(engine_load.to_string());
+        game.gauge.set_value(rpm as i32);
         // unlock the framebuffer
         FRAMEBUFFER.lock(|fb| {
             *fb.borrow_mut() = Some(buf); // reclaim the buffer
@@ -93,7 +97,7 @@ pub(crate) fn initialize_game(
                 ))
                 // .add_schedule(schedule)
                 .add_systems(Update, render_system)
-                .add_systems(Update, simulate_value)
+                // .add_systems(Update, simulate_value)
                 .add_systems(Update, fps_system)
                 .finish();
             break app;

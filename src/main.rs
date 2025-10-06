@@ -29,7 +29,8 @@ use esp_hal::peripherals::{ADC1, GPIO1};
 use esp_hal::system::{CpuControl, Stack};
 use esp_hal::timer::AnyTimer;
 use esp_hal::timer::timg::TimerGroup;
-use esp_hal::twai::{BaudRate, TwaiConfiguration, TwaiMode};
+use esp_hal::twai::filter::SingleStandardFilter;
+use esp_hal::twai::{self, BaudRate, TwaiConfiguration, TwaiMode};
 use esp_hal::twai::{EspTwaiFrame, Twai};
 use esp_hal::{Async, dma_buffers};
 use esp_hal::{
@@ -112,8 +113,8 @@ fn main() -> ! {
 
     // let systimer = SystemTimer::new(peripherals.SYSTIMER);
 
-    let can_rx = peripherals.GPIO33; // GREY -> yellow
-    let can_tx = peripherals.GPIO21; // VIOLET -> white
+    let can_tx = peripherals.GPIO33; // GREY -> yellow
+    let can_rx = peripherals.GPIO21; // VIOLET -> white
 
     let timg0 = TimerGroup::new(peripherals.TIMG0);
     let timer0: AnyTimer = timg0.timer0.into();
@@ -133,23 +134,26 @@ fn main() -> ! {
                 esp_hal::spi::master::Config::default()
                     .with_frequency(Rate::from_mhz(80))
                     .with_mode(esp_hal::spi::Mode::_0),
-            )
-            .unwrap()
-            .with_sck(peripherals.GPIO10)
-            .with_mosi(peripherals.GPIO11)
-            .with_dma(peripherals.DMA_CH0)
-            .with_buffers(dma_rx_buf, dma_tx_buf)
-            .into_async();
+            ).unwrap()
+                .with_sck(peripherals.GPIO10)
+                .with_mosi(peripherals.GPIO11)
+                .with_dma(peripherals.DMA_CH0)
+                .with_buffers(dma_rx_buf, dma_tx_buf)
+                .into_async();
 
-            let can = TwaiConfiguration::new(
+            const FILTER: SingleStandardFilter = SingleStandardFilter::new(b"01000001000", b"x", [b"xxxxxxxx", b"xxxxxxxx"]);
+
+            let mut can = TwaiConfiguration::new(
                 peripherals.TWAI0,
                 can_rx,
                 can_tx,
                 BaudRate::B500K,
                 TwaiMode::Normal,
-            )
-            .into_async()
-            .start();
+            ).into_async();
+            
+            can.set_filter(FILTER);
+
+            let can = can.start();
             static EXECUTOR: StaticCell<Executor> = StaticCell::new();
             let executor = EXECUTOR.init(Executor::new());
             let receiver = can_frame_channel.receiver();
@@ -210,7 +214,7 @@ async fn frame_received(mut twai: Twai<'static, Async>, sender: CanFrameSender<'
     loop {
         match twai.receive_async().await {
             Ok(message) => {
-                info!("Received CAN message: {message:?}");
+                // info!("Received CAN message: {message:?}");
                 sender.send(message).await
             }
             Err(e) => {
