@@ -41,7 +41,12 @@ fn render_system(
     if let Some(buf) = buf {
         let (rpm, engine_load, throttle_position, _message_count) = game.state.lock(|state| {
             let borrow = state.borrow();
-            (borrow.rpm(), borrow.engine_load(), borrow.throttle_position(), borrow.message_count())
+            (
+                borrow.rpm(),
+                borrow.engine_load(),
+                borrow.throttle_position(),
+                borrow.message_count(),
+            )
         });
         // Create a new frame buffer with the static buffer.
         let mut raw_fb = RawFrameBuf::<Rgb565, _>::new(&mut buf[..], LCD_H_RES, LCD_V_RES);

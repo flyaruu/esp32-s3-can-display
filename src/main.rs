@@ -134,14 +134,16 @@ fn main() -> ! {
                 esp_hal::spi::master::Config::default()
                     .with_frequency(Rate::from_mhz(80))
                     .with_mode(esp_hal::spi::Mode::_0),
-            ).unwrap()
-                .with_sck(peripherals.GPIO10)
-                .with_mosi(peripherals.GPIO11)
-                .with_dma(peripherals.DMA_CH0)
-                .with_buffers(dma_rx_buf, dma_tx_buf)
-                .into_async();
+            )
+            .unwrap()
+            .with_sck(peripherals.GPIO10)
+            .with_mosi(peripherals.GPIO11)
+            .with_dma(peripherals.DMA_CH0)
+            .with_buffers(dma_rx_buf, dma_tx_buf)
+            .into_async();
 
-            const FILTER: SingleStandardFilter = SingleStandardFilter::new(b"01000001000", b"x", [b"xxxxxxxx", b"xxxxxxxx"]);
+            const FILTER: SingleStandardFilter =
+                SingleStandardFilter::new(b"01000001000", b"x", [b"xxxxxxxx", b"xxxxxxxx"]);
 
             let mut can = TwaiConfiguration::new(
                 peripherals.TWAI0,
@@ -149,8 +151,9 @@ fn main() -> ! {
                 can_tx,
                 BaudRate::B500K,
                 TwaiMode::Normal,
-            ).into_async();
-            
+            )
+            .into_async();
+
             can.set_filter(FILTER);
 
             let can = can.start();

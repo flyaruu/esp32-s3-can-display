@@ -16,11 +16,13 @@ impl CarState {
     pub fn process_message<F: Frame>(&mut self, frame: F) {
         self.message_count += 1;
         let data = match frame.id() {
-            Standard(standard_id) => if standard_id.as_raw() == 0x208 {
-                Some(frame.data())
-            } else {
-                None
-            },
+            Standard(standard_id) => {
+                if standard_id.as_raw() == 0x208 {
+                    Some(frame.data())
+                } else {
+                    None
+                }
+            }
             Extended(_extended_id) => None,
         };
         if let Some(data) = data {
