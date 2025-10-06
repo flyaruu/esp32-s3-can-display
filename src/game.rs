@@ -1,6 +1,6 @@
 use core::cell::RefCell;
 
-use alloc::{borrow, string::ToString, sync::Arc};
+use alloc::{string::ToString, sync::Arc};
 use bevy_app::{App, Update};
 use bevy_ecs::{
     resource::Resource,
@@ -18,7 +18,6 @@ use crate::{
     ecs::{
         DashboardContextResource,
         fps::{FPSResource, fps_system},
-        simulate::simulate_value,
     },
     gauge::{DashboardContext, Gauge},
 };
@@ -30,7 +29,6 @@ pub(crate) struct AppStateResource {
 
 fn render_system(
     mut game: ResMut<AppStateResource>,
-    fps: Res<FPSResource>,
     dashboard_context: Res<DashboardContextResource<LCD_H_RES, LCD_V_RES>>,
 ) {
     wait_for_drawing();

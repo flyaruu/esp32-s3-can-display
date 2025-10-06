@@ -111,16 +111,8 @@ impl<
         self.line1 = value;
     }
 
-    pub fn get_line1(&'a mut self) -> &'a mut String {
-        &mut self.line1
-    }
-
     pub fn set_line2(&mut self, value: String) {
         self.line2 = value;
-    }
-
-    pub fn get_line2(&'a mut self) -> &'a mut String {
-        &mut self.line2
     }
 
     pub fn set_value(&mut self, value: i32) {

@@ -34,10 +34,6 @@ impl CarState {
         self.message_count
     }
 
-    pub fn voltage(&self) -> f32 {
-        self.avg_voltage
-    }
-
     pub fn set_voltage(&mut self, value: f32) {
         self.avg_voltage = value;
     }

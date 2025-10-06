@@ -30,7 +30,7 @@ use esp_hal::system::{CpuControl, Stack};
 use esp_hal::timer::AnyTimer;
 use esp_hal::timer::timg::TimerGroup;
 use esp_hal::twai::filter::SingleStandardFilter;
-use esp_hal::twai::{self, BaudRate, TwaiConfiguration, TwaiMode};
+use esp_hal::twai::{BaudRate, TwaiConfiguration, TwaiMode};
 use esp_hal::twai::{EspTwaiFrame, Twai};
 use esp_hal::{Async, dma_buffers};
 use esp_hal::{
