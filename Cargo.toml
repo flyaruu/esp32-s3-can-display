@@ -18,8 +18,8 @@ embassy-executor = { version = "0.7.0", features = [
 ] }
 embassy-time = { version = "0.4.0", features = ["log"] }
 esp-hal-embassy = { version = "0.8.1", features = ["esp32s3", "log-04"] }
-embassy-sync = "0.7.0"
-embassy-embedded-hal = "0.3.1"
+embassy-sync = "0.7.2"
+embassy-embedded-hal = "0.4"
 
 
 esp-println = { version = "0.14.0", features = [ "log-04" ] }
@@ -41,6 +41,7 @@ circ_buffer = "0.1.9"
 lcd-async = "0.1.1"
 embedded-hal-async = "1.0.0"
 critical-section = "1.2.0"
+embassy-futures = "0.1.2"
 
 [features]
 default = [ "esp-hal/esp32s3", "esp-backtrace/esp32s3", "esp-println/esp32s3", "esp-hal/psram" ]

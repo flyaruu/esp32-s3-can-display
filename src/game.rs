@@ -13,13 +13,9 @@ use lcd_async::raw_framebuf::RawFrameBuf;
 use log::info;
 
 use crate::{
-    DrawBufferStatus, FRAMEBUFFER, LCD_H_RES, LCD_V_RES,
-    car_state::CarState,
-    ecs::{
-        DashboardContextResource,
-        fps::{FPSResource, fps_system},
-    },
-    gauge::{DashboardContext, Gauge},
+    car_state::CarState, ecs::{
+        fps::{fps_system, FPSResource}, DashboardContextResource
+    }, gauge::{DashboardContext, Gauge}, DrawBufferStatus, FRAMEBUFFER, LCD_H_RES, LCD_V_RES
 };
 #[derive(Resource)]
 pub(crate) struct AppStateResource {
@@ -100,7 +96,6 @@ pub(crate) fn initialize_game(
                 ))
                 // .add_schedule(schedule)
                 .add_systems(Update, render_system)
-                // .add_systems(Update, simulate_value)
                 .add_systems(Update, fps_system)
                 .finish();
             break app;

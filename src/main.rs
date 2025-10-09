@@ -47,6 +47,7 @@ use static_cell::StaticCell;
 
 use crate::car_state::CarState;
 use crate::display::setup_display_task;
+use crate::ecs::simulate::simulate_if_no_traffic;
 use crate::game::initialize_game;
 
 static mut APP_CORE_STACK: Stack<8192> = Stack::new();
@@ -161,6 +162,7 @@ fn main() -> ! {
             let executor = EXECUTOR.init(Executor::new());
             let receiver = can_frame_channel.receiver();
             let sender = can_frame_channel.sender();
+
             let mut adc_config = AdcConfig::default();
             let adc_pin = adc_config.enable_pin(peripherals.GPIO1, Attenuation::_0dB);
             let voltage_adc = Adc::new(peripherals.ADC1, adc_config);
@@ -173,6 +175,7 @@ fn main() -> ! {
             let cs_output = Output::new(peripherals.GPIO9, Level::High, OutputConfig::default());
             executor.run(|spawner| {
                 spawner.must_spawn(frame_received(can, sender));
+                spawner.must_spawn(simulate_if_no_traffic(receiver, sender));
                 spawner.must_spawn(car_state_maintainer(car_state_async_side.clone(), receiver));
                 spawner.must_spawn(voltage_calculator(
                     adc_pin,
@@ -212,12 +215,13 @@ async fn car_state_maintainer(
     }
 }
 
+// Will listen for a while, if no traffic, will simulate some messages
+
 #[task]
 async fn frame_received(mut twai: Twai<'static, Async>, sender: CanFrameSender<'static>) {
     loop {
         match twai.receive_async().await {
             Ok(message) => {
-                // info!("Received CAN message: {message:?}");
                 sender.send(message).await
             }
             Err(e) => {
